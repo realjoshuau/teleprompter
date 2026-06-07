@@ -5,7 +5,7 @@ const promptView = document.querySelector("#targetPrompt");
 const slideImage = document.querySelector("#targetSlideImage");
 const promptScroll = document.querySelector("#targetPromptScroll");
 
-let promptLines = [];
+let promptBlocks = [];
 let receiverConnection = null;
 
 function setMode(mode) {
@@ -15,23 +15,39 @@ function setMode(mode) {
   promptView.hidden = mode !== "teleprompter";
 }
 
-function renderPromptLines(lines, activeIndex = 0) {
-  promptLines = Array.isArray(lines) ? lines : [];
+function renderPromptBlocks(blocks, activeIndex = 0) {
+  promptBlocks = Array.isArray(blocks) ? blocks : [];
   promptScroll.textContent = "";
 
-  promptLines.forEach((line, index) => {
-    const item = document.createElement("p");
-    item.className = "target-prompt-line";
-    item.textContent = line || "\u00a0";
+  const content = document.createElement("div");
+  content.className = "target-prompt-content";
+
+  promptBlocks.forEach((block, index) => {
+    const item = document.createElement("section");
+    item.className = "target-prompt-block";
+    item.innerHTML = block.html || "";
     if (index === activeIndex) item.classList.add("active");
-    promptScroll.append(item);
+    content.append(item);
   });
+
+  promptScroll.append(content);
 }
 
-function updatePromptPosition(scrollTop, activeIndex) {
+function applyPromptSizing(data = {}) {
+  if (Number.isFinite(data.fontSize)) {
+    promptScroll.style.setProperty("--target-prompt-font-size", `${data.fontSize}px`);
+  }
+
+  if (Number.isFinite(data.zoom)) {
+    promptScroll.style.setProperty("--target-prompt-zoom", String(data.zoom / 100));
+  }
+}
+
+function updatePromptPosition(scrollTop, activeIndex, data = {}) {
+  applyPromptSizing(data);
   promptScroll.scrollTop = Number.isFinite(scrollTop) ? scrollTop : 0;
-  promptScroll.querySelectorAll(".target-prompt-line").forEach((line, index) => {
-    line.classList.toggle("active", index === activeIndex);
+  promptScroll.querySelectorAll(".target-prompt-block").forEach((block, index) => {
+    block.classList.toggle("active", index === activeIndex);
   });
 }
 
@@ -42,8 +58,9 @@ function showSlide(src, alt) {
 }
 
 function showPrompt(data) {
-  renderPromptLines(data.lines, data.activeIndex);
-  updatePromptPosition(data.scrollTop, data.activeIndex);
+  applyPromptSizing(data);
+  renderPromptBlocks(data.blocks, data.activeIndex);
+  updatePromptPosition(data.scrollTop, data.activeIndex, data);
   setMode("teleprompter");
 }
 
@@ -86,7 +103,7 @@ function handleControllerMessage(message) {
   }
 
   if (message.type === "target:prompt-position") {
-    updatePromptPosition(message.scrollTop, message.activeIndex);
+    updatePromptPosition(message.scrollTop, message.activeIndex, message);
   }
 }
 
