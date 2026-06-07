@@ -9,6 +9,10 @@ const els = {
   launchButton: document.querySelector("#launchButton"),
   blankPresentationButton: document.querySelector("#blankPresentationButton"),
   closePresentationButton: document.querySelector("#closePresentationButton"),
+  aboutButton: document.querySelector("#aboutButton"),
+  aboutPanel: document.querySelector("#aboutPanel"),
+  aboutMode: document.querySelector("#aboutMode"),
+  aboutCommit: document.querySelector("#aboutCommit"),
   projectStatus: document.querySelector("#projectStatus"),
   screenStatus: document.querySelector("#screenStatus"),
   vlcStatus: document.querySelector("#vlcStatus"),
@@ -65,6 +69,10 @@ const state = {
   presentationBlanked: false,
   presentationRequest: null,
   presentationConnection: null,
+  about: {
+    mode: "development",
+    commitHash: null
+  },
   vlc: {
     host: "127.0.0.1",
     port: 8090,
@@ -173,6 +181,53 @@ function setScreenStatus(message) {
 
 function setVlcStatus(message) {
   els.vlcStatus.textContent = message;
+}
+
+function shortCommitHash(commitHash) {
+  return commitHash ? commitHash.slice(0, 7) : "unavailable";
+}
+
+function renderAbout() {
+  const commitText = shortCommitHash(state.about.commitHash);
+  els.aboutMode.textContent = state.about.mode;
+  els.aboutCommit.textContent = commitText;
+  els.aboutCommit.title = state.about.commitHash || "unavailable";
+}
+
+function setAboutOpen(open) {
+  els.aboutPanel.hidden = !open;
+  els.aboutButton.setAttribute("aria-expanded", String(open));
+}
+
+function isAboutOpen() {
+  return !els.aboutPanel.hidden;
+}
+
+async function loadAboutInfo() {
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 2500);
+
+  try {
+    const response = await fetch("/api/about", {
+      cache: "no-store",
+      signal: controller.signal
+    });
+    if (!response.ok) throw new Error(`About API responded ${response.status}`);
+
+    const about = await response.json();
+    state.about = {
+      mode: about.mode === "production" ? "production" : "development",
+      commitHash: typeof about.commitHash === "string" && about.commitHash ? about.commitHash : null
+    };
+  } catch {
+    state.about = {
+      mode: "development",
+      commitHash: null
+    };
+  } finally {
+    window.clearTimeout(timeout);
+    renderAbout();
+  }
 }
 
 function postToTarget(message, options = {}) {
@@ -857,6 +912,15 @@ function bindEvents() {
   els.launchButton.addEventListener("click", launchTarget);
   els.blankPresentationButton.addEventListener("click", () => setPresentationBlanked(!state.presentationBlanked));
   els.closePresentationButton.addEventListener("click", closePresentationDisplay);
+  els.aboutButton.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setAboutOpen(!isAboutOpen());
+  });
+  els.aboutPanel.addEventListener("click", (event) => event.stopPropagation());
+  document.addEventListener("click", () => setAboutOpen(false));
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setAboutOpen(false);
+  });
   els.prevSlideButton.addEventListener("click", () => changeSlide(-1));
   els.nextSlideButton.addEventListener("click", () => changeSlide(1));
   els.startPromptButton.addEventListener("click", startPrompt);
@@ -917,6 +981,7 @@ function init() {
   loadPreferences();
   bindEvents();
   renderAll();
+  loadAboutInfo();
 
   if (!supportsFileSystemAccess()) {
     setProjectStatus("File System Access API requires Chromium on localhost or HTTPS.");

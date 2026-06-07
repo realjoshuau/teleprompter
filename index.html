@@ -13,12 +13,35 @@
           <p class="eyebrow">Controller</p>
           <h1>Teleprompter & Slide Viewer</h1>
         </div>
-        <div class="project-actions">
-          <button id="createProjectButton" type="button">Create Project</button>
-          <button id="loadProjectButton" class="secondary" type="button">Load Project</button>
-          <button id="launchButton" class="secondary" type="button" aria-pressed="false">Launch Presentation</button>
-          <button id="blankPresentationButton" class="secondary" type="button" aria-pressed="false">Blank Presentation</button>
-          <button id="closePresentationButton" class="secondary" type="button" aria-pressed="true">Close Presentation</button>
+        <div class="topbar-actions">
+          <div class="project-actions">
+            <button id="createProjectButton" type="button">Create Project</button>
+            <button id="loadProjectButton" class="secondary" type="button">Load Project</button>
+            <button id="launchButton" class="secondary" type="button" aria-pressed="false">Launch Presentation</button>
+            <button id="blankPresentationButton" class="secondary" type="button" aria-pressed="false">Blank Presentation</button>
+            <button id="closePresentationButton" class="secondary" type="button" aria-pressed="true">Close Presentation</button>
+          </div>
+          <div class="about-menu">
+            <button
+              id="aboutButton"
+              class="icon-button secondary about-button"
+              type="button"
+              aria-label="About this app"
+              aria-expanded="false"
+              aria-controls="aboutPanel"
+              title="About this app"
+            >i</button>
+            <div id="aboutPanel" class="about-panel" role="dialog" aria-label="About this app" hidden>
+              <div>
+                <span>Mode</span>
+                <strong id="aboutMode">development</strong>
+              </div>
+              <div>
+                <span>Commit</span>
+                <strong id="aboutCommit" title="unavailable">unavailable</strong>
+              </div>
+            </div>
+          </div>
         </div>
       </header>
 

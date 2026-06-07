@@ -64,6 +64,7 @@ button:disabled {
 button.secondary,
 button.tab,
 button.icon-button,
+button.about-button,
 .button-link.secondary {
   color: var(--text);
   background: var(--surface-2);
@@ -182,6 +183,56 @@ h2 {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.about-menu {
+  position: relative;
+}
+
+.about-button {
+  min-width: 42px;
+  font-size: 1rem;
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.about-panel {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 10;
+  display: grid;
+  min-width: 220px;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  box-shadow: 0 18px 60px var(--shadow);
+}
+
+.about-panel div {
+  display: grid;
+  gap: 3px;
+}
+
+.about-panel span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.about-panel strong {
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
 }
 
 .status-strip {
@@ -563,11 +614,22 @@ h2 {
 
   .topbar {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    width: 100%;
   }
 
   .project-actions {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .about-menu {
+    justify-self: end;
   }
 
   .workspace-grid {
