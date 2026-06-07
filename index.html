@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Teleprompter & Slide Viewer</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Controller</p>
+          <h1>Teleprompter & Slide Viewer</h1>
+        </div>
+        <div class="project-actions">
+          <button id="createProjectButton" type="button">Create Project</button>
+          <button id="loadProjectButton" class="secondary" type="button">Load Project</button>
+          <button id="launchButton" class="secondary" type="button">Launch Presentation</button>
+          <button id="blankPresentationButton" class="secondary" type="button" aria-pressed="false">Blank Presentation</button>
+          <button id="closePresentationButton" class="secondary" type="button">Close Presentation</button>
+        </div>
+      </header>
+
+      <section class="status-strip" aria-live="polite">
+        <span id="projectStatus">No project loaded.</span>
+        <span id="screenStatus">Presentation screen is idle.</span>
+        <span id="vlcStatus">VLC is not connected.</span>
+      </section>
+
+      <nav class="tabs" aria-label="Controller views">
+        <button id="presentationTab" class="tab active" type="button" data-view="presentation">Presentation</button>
+        <button id="teleprompterTab" class="tab" type="button" data-view="teleprompter">Teleprompter</button>
+        <button id="vlcTab" class="tab" type="button" data-view="vlc">Video Remote</button>
+      </nav>
+
+      <section id="presentationPanel" class="view-panel active" data-panel="presentation">
+        <div class="workspace-grid">
+          <section class="tool-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Slides</p>
+                <h2 id="slideTitle">No slide selected</h2>
+              </div>
+              <div class="inline-actions">
+                <button id="prevSlideButton" class="icon-button" type="button" title="Previous slide">‹</button>
+                <button id="nextSlideButton" class="icon-button" type="button" title="Next slide">›</button>
+              </div>
+            </div>
+            <figure class="slide-preview">
+              <img id="slidePreview" alt="">
+              <figcaption id="slideEmpty">Load a project to preview slides.</figcaption>
+            </figure>
+            <p id="slideNote" class="note-text">Speaker notes will appear here.</p>
+          </section>
+
+          <aside class="tool-panel side-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Manifest</p>
+                <h2>Slide List</h2>
+              </div>
+            </div>
+            <div id="slideList" class="slide-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="teleprompterPanel" class="view-panel" data-panel="teleprompter">
+        <div class="workspace-grid">
+          <section class="tool-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Prompt</p>
+                <h2>Script</h2>
+              </div>
+              <div class="inline-actions">
+                <button id="startPromptButton" type="button">Start</button>
+                <button id="pausePromptButton" class="secondary" type="button">Pause</button>
+                <button id="resetPromptButton" class="secondary" type="button">Reset</button>
+              </div>
+            </div>
+            <div class="speed-control">
+              <label for="scrollSpeed">Scroll speed</label>
+              <input id="scrollSpeed" type="range" min="8" max="120" step="1">
+              <span id="scrollSpeedValue">24 px/s</span>
+            </div>
+            <div id="teleprompterScroll" class="teleprompter-scroll" tabindex="0" aria-label="Teleprompter script"></div>
+          </section>
+
+          <aside class="tool-panel side-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Current Line</p>
+                <h2 id="currentLineTitle">Ready</h2>
+              </div>
+            </div>
+            <p id="currentLineText" class="note-text">Load a project to show teleprompter text.</p>
+          </aside>
+        </div>
+      </section>
+
+      <section id="vlcPanel" class="view-panel" data-panel="vlc">
+        <div class="workspace-grid">
+          <section class="tool-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">VLC Remote</p>
+                <h2 id="vlcNowPlaying">Not playing</h2>
+              </div>
+              <button id="refreshVlcButton" class="secondary" type="button">Refresh</button>
+            </div>
+
+            <div class="config-grid">
+              <label>
+                Host
+                <input id="vlcHost" type="text" autocomplete="off" spellcheck="false">
+              </label>
+              <label>
+                Port
+                <input id="vlcPort" type="number" min="1" max="65535">
+              </label>
+              <label>
+                Password
+                <input id="vlcPassword" type="password" autocomplete="current-password">
+              </label>
+              <button id="saveVlcButton" type="button">Save VLC Config</button>
+            </div>
+
+            <div class="remote-pad" aria-label="VLC controls">
+              <button id="vlcPrevButton" class="secondary" type="button">Previous</button>
+              <button id="vlcPlayPauseButton" type="button">Play/Pause</button>
+              <button id="vlcNextButton" class="secondary" type="button">Next</button>
+              <button id="vlcStopButton" class="danger" type="button">Stop</button>
+            </div>
+
+            <details class="advanced">
+              <summary>Advanced</summary>
+              <label class="toggle-row">
+                <input id="vlcDocked" type="checkbox">
+                Dock VLC remote so playback does not force this view
+              </label>
+            </details>
+          </section>
+
+          <aside class="tool-panel side-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Playlist</p>
+                <h2>Current Queue</h2>
+              </div>
+            </div>
+            <div id="playlistList" class="playlist-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <iframe
+        id="targetFrame"
+        class="target-frame"
+        title="Presentation screen"
+        allow="fullscreen; presentation"
+        allowfullscreen
+      ></iframe>
+    </main>
+
+    <script src="main.js" defer></script>
+  </body>
+</html>

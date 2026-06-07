@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Presentation Screen</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="target-page">
+    <main id="targetStage" class="target-stage blank">
+      <section id="targetBlank" class="target-blank" aria-live="polite">
+        <p>Presentation screen blanked.</p>
+      </section>
+
+      <section id="targetSlide" class="target-slide" hidden>
+        <img id="targetSlideImage" alt="">
+      </section>
+
+      <section id="targetPrompt" class="target-prompt" hidden>
+        <div id="targetPromptScroll" class="target-prompt-scroll"></div>
+      </section>
+    </main>
+
+    <script src="target.js" defer></script>
+  </body>
+</html>
