@@ -27,6 +27,10 @@ const els = {
   resetPromptButton: document.querySelector("#resetPromptButton"),
   scrollSpeed: document.querySelector("#scrollSpeed"),
   scrollSpeedValue: document.querySelector("#scrollSpeedValue"),
+  promptFontSize: document.querySelector("#promptFontSize"),
+  promptFontSizeValue: document.querySelector("#promptFontSizeValue"),
+  promptZoom: document.querySelector("#promptZoom"),
+  promptZoomValue: document.querySelector("#promptZoomValue"),
   teleprompterScroll: document.querySelector("#teleprompterScroll"),
   currentLineTitle: document.querySelector("#currentLineTitle"),
   currentLineText: document.querySelector("#currentLineText"),
@@ -48,9 +52,11 @@ const state = {
   activeView: "presentation",
   selectedSlide: 0,
   scrollSpeed: 24,
+  promptFontSize: 32,
+  promptZoom: 100,
   promptRunning: false,
-  promptLines: [],
-  activeLine: 0,
+  promptBlocks: [],
+  activeBlock: 0,
   projectHandle: null,
   manifest: null,
   slides: [],
@@ -79,6 +85,8 @@ function loadPreferences() {
     state.activeView = saved.activeView || state.activeView;
     state.selectedSlide = Number.isInteger(saved.selectedSlide) ? saved.selectedSlide : state.selectedSlide;
     state.scrollSpeed = Number.isFinite(saved.scrollSpeed) ? saved.scrollSpeed : state.scrollSpeed;
+    state.promptFontSize = Number.isFinite(saved.promptFontSize) ? saved.promptFontSize : state.promptFontSize;
+    state.promptZoom = Number.isFinite(saved.promptZoom) ? saved.promptZoom : state.promptZoom;
     state.vlc = { ...state.vlc, ...(saved.vlc || {}) };
   } catch {
     localStorage.removeItem(storageKey);
@@ -90,6 +98,8 @@ function savePreferences() {
     activeView: state.activeView,
     selectedSlide: state.selectedSlide,
     scrollSpeed: state.scrollSpeed,
+    promptFontSize: state.promptFontSize,
+    promptZoom: state.promptZoom,
     vlc: {
       host: state.vlc.host,
       port: state.vlc.port,
@@ -296,7 +306,7 @@ async function loadProjectFromHandle(directoryHandle) {
     state.manifest = normalizeManifest(JSON.parse(manifestText));
     const promptText = await readTextFile(directoryHandle, state.manifest.teleprompter);
 
-    state.promptLines = markdownToLines(promptText);
+    state.promptBlocks = markdownToPromptBlocks(promptText);
     state.slides = await Promise.all(state.manifest.slides.map((slide, index) => loadSlide(directoryHandle, slide, index)));
     state.slideUrls = state.slides.map((slide) => slide.url).filter(Boolean);
 
@@ -308,15 +318,15 @@ async function loadProjectFromHandle(directoryHandle) {
     };
 
     state.selectedSlide = Math.min(state.selectedSlide, Math.max(state.slides.length - 1, 0));
-    state.activeLine = 0;
-    setProjectStatus(`Loaded ${directoryHandle.name}: ${state.slides.length} slide(s), ${state.promptLines.length} prompt line(s).`);
+    state.activeBlock = 0;
+    setProjectStatus(`Loaded ${directoryHandle.name}: ${state.slides.length} slide(s), ${state.promptBlocks.length} prompt block(s).`);
     renderAll();
     await launchTarget();
   } catch (error) {
     setProjectStatus(`Project load failed: ${error.message}`);
     state.manifest = null;
     state.slides = [];
-    state.promptLines = [];
+    state.promptBlocks = [];
     renderAll();
   }
 }
@@ -355,20 +365,31 @@ function fileToDataUrl(file) {
   });
 }
 
-function markdownToLines(markdown) {
-  return markdown
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .map((line) => line
-      .replace(/^#{1,6}\s*/, "")
-      .replace(/^[-*+]\s+/, "")
-      .replace(/^\d+\.\s+/, "")
-      .replace(/\*\*([^*]+)\*\*/g, "$1")
-      .replace(/\*([^*]+)\*/g, "$1")
-      .replace(/`([^`]+)`/g, "$1")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-      .trim())
-    .filter(Boolean);
+function markdownToPromptBlocks(markdown) {
+  const markedApi = window.marked;
+  if (!markedApi) throw new Error("Marked library is unavailable.");
+
+  const renderer = new markedApi.Renderer();
+  renderer.html = ({ text }) => escapeHtml(text);
+
+  const options = { gfm: true, breaks: false, renderer };
+  return markedApi
+    .lexer(markdown.replace(/\r\n/g, "\n"), options)
+    .filter((token) => token.type !== "space")
+    .map((token) => {
+      const html = markedApi.Parser.parse([token], options).trim();
+      return {
+        html,
+        text: htmlToText(html)
+      };
+    })
+    .filter((block) => block.html || block.text);
+}
+
+function htmlToText(html) {
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  return (template.content.textContent || "").replace(/\s+/g, " ").trim();
 }
 
 async function launchTarget() {
@@ -555,36 +576,49 @@ function syncSlideToTarget() {
 function renderPrompt() {
   els.scrollSpeed.value = String(state.scrollSpeed);
   els.scrollSpeedValue.textContent = `${state.scrollSpeed} px/s`;
+  els.promptFontSize.value = String(state.promptFontSize);
+  els.promptFontSizeValue.textContent = `${state.promptFontSize} px`;
+  els.promptZoom.value = String(state.promptZoom);
+  els.promptZoomValue.textContent = `${state.promptZoom}%`;
+  applyPromptSizing(els.teleprompterScroll);
   els.teleprompterScroll.textContent = "";
 
-  state.promptLines.forEach((line, index) => {
-    const item = document.createElement("p");
-    item.className = "prompt-line";
-    item.textContent = line;
+  const content = document.createElement("div");
+  content.className = "prompt-content";
+
+  state.promptBlocks.forEach((block, index) => {
+    const item = document.createElement("section");
+    item.className = "prompt-block";
+    item.innerHTML = block.html;
     item.dataset.index = String(index);
-    item.classList.toggle("active", index === state.activeLine);
-    els.teleprompterScroll.append(item);
+    item.classList.toggle("active", index === state.activeBlock);
+    content.append(item);
   });
+
+  els.teleprompterScroll.append(content);
 
   updateCurrentLine();
 }
 
 function updateCurrentLine() {
-  const line = state.promptLines[state.activeLine] || "Load a project to show teleprompter text.";
-  els.currentLineTitle.textContent = state.promptLines.length ? `Line ${state.activeLine + 1} of ${state.promptLines.length}` : "Ready";
-  els.currentLineText.textContent = line;
+  const block = state.promptBlocks[state.activeBlock];
+  const text = block?.text || "Load a project to show teleprompter text.";
+  els.currentLineTitle.textContent = state.promptBlocks.length ? `Block ${state.activeBlock + 1} of ${state.promptBlocks.length}` : "Ready";
+  els.currentLineText.textContent = text;
 
-  els.teleprompterScroll.querySelectorAll(".prompt-line").forEach((item, index) => {
-    item.classList.toggle("active", index === state.activeLine);
+  els.teleprompterScroll.querySelectorAll(".prompt-block").forEach((item, index) => {
+    item.classList.toggle("active", index === state.activeBlock);
   });
 }
 
 function syncPromptToTarget() {
   postToTarget({
     type: "target:prompt",
-    lines: state.promptLines,
+    blocks: state.promptBlocks,
     scrollTop: els.teleprompterScroll.scrollTop,
-    activeIndex: state.activeLine
+    activeIndex: state.activeBlock,
+    fontSize: state.promptFontSize,
+    zoom: state.promptZoom
   });
 }
 
@@ -592,12 +626,14 @@ function syncPromptPositionToTarget() {
   postToTarget({
     type: "target:prompt-position",
     scrollTop: els.teleprompterScroll.scrollTop,
-    activeIndex: state.activeLine
+    activeIndex: state.activeBlock,
+    fontSize: state.promptFontSize,
+    zoom: state.promptZoom
   });
 }
 
 function startPrompt() {
-  if (!state.promptLines.length) return;
+  if (!state.promptBlocks.length) return;
   state.promptRunning = true;
   lastPromptTick = performance.now();
   promptAnimation = requestAnimationFrame(tickPrompt);
@@ -611,7 +647,7 @@ function stopPrompt() {
 function resetPrompt() {
   stopPrompt();
   els.teleprompterScroll.scrollTop = 0;
-  setActiveLineFromScroll();
+  setActiveBlockFromScroll();
   syncPromptPositionToTarget();
 }
 
@@ -620,24 +656,29 @@ function tickPrompt(now) {
   const seconds = (now - lastPromptTick) / 1000;
   lastPromptTick = now;
   els.teleprompterScroll.scrollTop += state.scrollSpeed * seconds;
-  setActiveLineFromScroll();
+  setActiveBlockFromScroll();
   syncPromptPositionToTarget();
   promptAnimation = requestAnimationFrame(tickPrompt);
 }
 
-function setActiveLineFromScroll() {
+function setActiveBlockFromScroll() {
   const containerTop = els.teleprompterScroll.getBoundingClientRect().top;
   const marker = containerTop + els.teleprompterScroll.clientHeight * 0.36;
   let activeIndex = 0;
 
-  els.teleprompterScroll.querySelectorAll(".prompt-line").forEach((line, index) => {
-    if (line.getBoundingClientRect().top <= marker) activeIndex = index;
+  els.teleprompterScroll.querySelectorAll(".prompt-block").forEach((block, index) => {
+    if (block.getBoundingClientRect().top <= marker) activeIndex = index;
   });
 
-  if (state.activeLine !== activeIndex) {
-    state.activeLine = activeIndex;
+  if (state.activeBlock !== activeIndex) {
+    state.activeBlock = activeIndex;
     updateCurrentLine();
   }
+}
+
+function applyPromptSizing(element) {
+  element.style.setProperty("--prompt-font-size", `${state.promptFontSize}px`);
+  element.style.setProperty("--prompt-zoom", String(state.promptZoom / 100));
 }
 
 function renderVlcConfig() {
@@ -795,8 +836,26 @@ function bindEvents() {
     savePreferences();
   });
 
+  els.promptFontSize.addEventListener("input", () => {
+    state.promptFontSize = Number(els.promptFontSize.value);
+    els.promptFontSizeValue.textContent = `${state.promptFontSize} px`;
+    applyPromptSizing(els.teleprompterScroll);
+    setActiveBlockFromScroll();
+    syncPromptPositionToTarget();
+    savePreferences();
+  });
+
+  els.promptZoom.addEventListener("input", () => {
+    state.promptZoom = Number(els.promptZoom.value);
+    els.promptZoomValue.textContent = `${state.promptZoom}%`;
+    applyPromptSizing(els.teleprompterScroll);
+    setActiveBlockFromScroll();
+    syncPromptPositionToTarget();
+    savePreferences();
+  });
+
   els.teleprompterScroll.addEventListener("scroll", () => {
-    setActiveLineFromScroll();
+    setActiveBlockFromScroll();
     syncPromptPositionToTarget();
   }, { passive: true });
 

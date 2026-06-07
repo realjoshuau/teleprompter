@@ -319,7 +319,7 @@ h2 {
   font-weight: 500;
 }
 
-.speed-control,
+.prompt-controls,
 .config-grid {
   display: grid;
   grid-template-columns: minmax(120px, 0.35fr) minmax(180px, 1fr) auto;
@@ -328,7 +328,7 @@ h2 {
   margin-bottom: 14px;
 }
 
-.speed-control span,
+.prompt-controls span,
 .config-grid label {
   color: var(--muted);
   font-size: 0.9rem;
@@ -346,6 +346,8 @@ h2 {
 }
 
 .teleprompter-scroll {
+  --prompt-font-size: 32px;
+  --prompt-zoom: 1;
   height: min(58vh, 680px);
   overflow: auto;
   border: 1px solid var(--line);
@@ -355,18 +357,76 @@ h2 {
   scroll-behavior: auto;
 }
 
-.prompt-line {
+.prompt-content {
+  font-size: var(--prompt-font-size);
+  line-height: 1.42;
+  zoom: var(--prompt-zoom);
+}
+
+.prompt-block {
   margin: 0;
   padding: 10px 12px;
   border-left: 4px solid transparent;
   color: var(--text);
-  font-size: clamp(1.1rem, 2vw, 1.7rem);
-  line-height: 1.45;
 }
 
-.prompt-line.active {
+.prompt-block.active {
   border-left-color: var(--accent);
   background: #1e2a22;
+}
+
+.prompt-block > :first-child,
+.target-prompt-block > :first-child {
+  margin-top: 0;
+}
+
+.prompt-block > :last-child,
+.target-prompt-block > :last-child {
+  margin-bottom: 0;
+}
+
+.prompt-block h1,
+.prompt-block h2,
+.prompt-block h3,
+.target-prompt-block h1,
+.target-prompt-block h2,
+.target-prompt-block h3 {
+  line-height: 1.1;
+}
+
+.prompt-block h1,
+.target-prompt-block h1 {
+  font-size: 1.55em;
+}
+
+.prompt-block h2,
+.target-prompt-block h2 {
+  font-size: 1.35em;
+}
+
+.prompt-block h3,
+.target-prompt-block h3 {
+  font-size: 1.18em;
+}
+
+.prompt-block blockquote,
+.target-prompt-block blockquote {
+  margin-inline: 0;
+  padding-left: 1em;
+  border-left: 0.18em solid currentColor;
+  color: var(--muted);
+}
+
+.prompt-block code,
+.target-prompt-block code {
+  padding: 0.08em 0.24em;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.prompt-block a,
+.target-prompt-block a {
+  color: inherit;
 }
 
 .remote-pad {
@@ -459,21 +519,27 @@ h2 {
 }
 
 .target-prompt-scroll {
+  --target-prompt-font-size: 32px;
+  --target-prompt-zoom: 1;
   height: 100%;
   overflow: hidden;
   padding: 34vh 7vw 46vh;
 }
 
-.target-prompt-line {
+.target-prompt-content {
+  font-size: var(--target-prompt-font-size);
+  line-height: 1.28;
+  zoom: var(--target-prompt-zoom);
+}
+
+.target-prompt-block {
   margin: 0;
   padding: 1.4vh 1.2vw;
   border-left: 0.35vw solid transparent;
   color: #f2f2f2;
-  font-size: clamp(2rem, 4.6vw, 5.6rem);
-  line-height: 1.28;
 }
 
-.target-prompt-line.active {
+.target-prompt-block.active {
   border-left-color: #fff;
   background: #303030;
 }
@@ -487,7 +553,7 @@ h2 {
   .workspace-grid,
   .status-strip,
   .config-grid,
-  .speed-control {
+  .prompt-controls {
     grid-template-columns: 1fr;
   }
 

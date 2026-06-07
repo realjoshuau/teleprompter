@@ -80,10 +80,16 @@
                 <button id="resetPromptButton" class="secondary" type="button">Reset</button>
               </div>
             </div>
-            <div class="speed-control">
+            <div class="prompt-controls">
               <label for="scrollSpeed">Scroll speed</label>
               <input id="scrollSpeed" type="range" min="8" max="120" step="1">
               <span id="scrollSpeedValue">24 px/s</span>
+              <label for="promptFontSize">Font size</label>
+              <input id="promptFontSize" type="range" min="18" max="72" step="1">
+              <span id="promptFontSizeValue">32 px</span>
+              <label for="promptZoom">Zoom</label>
+              <input id="promptZoom" type="range" min="75" max="200" step="5">
+              <span id="promptZoomValue">100%</span>
             </div>
             <div id="teleprompterScroll" class="teleprompter-scroll" tabindex="0" aria-label="Teleprompter script"></div>
           </section>
@@ -170,6 +176,7 @@
       ></iframe>
     </main>
 
+    <script src="marked.umd.js" defer></script>
     <script src="main.js" defer></script>
   </body>
 </html>
