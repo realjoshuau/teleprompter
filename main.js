@@ -1,4 +1,6 @@
 const storageKey = "teleprompter-controller-state-v1";
+const unsupportedOverrideKey = "teleprompter-unsupported-override";
+const unsupportedOverrideParam = "override_unsupported_flag";
 const supportedSlideTypes = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
 
 const els = {
@@ -103,6 +105,52 @@ function supportsFileSystemAccess() {
 
 function supportsPresentationRequest() {
   return "PresentationRequest" in window && "presentation" in navigator;
+}
+
+function isTruthyOverrideValue(value) {
+  return value === "1" || value?.toLowerCase() === "true";
+}
+
+function saveUnsupportedOverride() {
+  localStorage.setItem(unsupportedOverrideKey, "true");
+}
+
+function hasUnsupportedOverride() {
+  return localStorage.getItem(unsupportedOverrideKey) === "true";
+}
+
+function applyQueryUnsupportedOverride() {
+  const url = new URL(window.location.href);
+  const overrideValue = url.searchParams.get(unsupportedOverrideParam);
+
+  if (!isTruthyOverrideValue(overrideValue)) return false;
+
+  saveUnsupportedOverride();
+  url.searchParams.delete(unsupportedOverrideParam);
+  window.history.replaceState({}, document.title, url);
+  return true;
+}
+
+function isChromiumishBrowser() {
+  const brands = navigator.userAgentData?.brands?.map((brand) => brand.brand).join(" ") || "";
+  const signal = `${brands} ${navigator.userAgent || ""} ${navigator.vendor || ""}`;
+  const hasChromiumSignal = /(chromium|chrome|crios|edg|opr|opera|brave|arc|vivaldi|helium)/i.test(signal);
+  const hasNonChromiumSignal = /(firefox|fxios|safari)/i.test(signal) && !/(chromium|chrome|crios|edg|opr|opera)/i.test(signal);
+
+  return hasChromiumSignal && !hasNonChromiumSignal;
+}
+
+function shouldRedirectToUnsupported() {
+  applyQueryUnsupportedOverride();
+
+  return !hasUnsupportedOverride()
+    && !isChromiumishBrowser()
+    && (!supportsFileSystemAccess() || !supportsPresentationRequest());
+}
+
+function redirectToUnsupported() {
+  const unsupportedUrl = new URL("unsupported.html", window.location.href);
+  window.location.replace(unsupportedUrl.href);
 }
 
 function setProjectStatus(message) {
@@ -765,6 +813,11 @@ function bindEvents() {
 }
 
 function init() {
+  if (shouldRedirectToUnsupported()) {
+    redirectToUnsupported();
+    return;
+  }
+
   loadPreferences();
   bindEvents();
   renderAll();

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Unsupported Browser</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="unsupported-shell">
+      <section class="unsupported-panel" aria-labelledby="unsupportedTitle">
+        <p class="eyebrow">Unsupported browser</p>
+        <h1 id="unsupportedTitle">This app needs Chromium browser APIs.</h1>
+        <p class="unsupported-copy">
+          Presentation display and project folders depend on APIs that are best supported in Chromium-ish browsers.
+          Download Chrome or Helium, or continue anyway if you know your browser can handle it.
+        </p>
+        <div class="unsupported-actions">
+          <a class="button-link" href="https://www.google.com/chrome/">Download Chrome</a>
+          <a class="button-link secondary" href="https://helium.computer/">Download Helium</a>
+          <button id="continueAnywayButton" class="secondary" type="button">Continue anyway</button>
+        </div>
+      </section>
+    </main>
+
+    <script src="unsupported.js" defer></script>
+  </body>
+</html>
