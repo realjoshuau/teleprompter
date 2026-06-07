@@ -1,6 +1,10 @@
 const storageKey = "teleprompter-controller-state-v1";
 const unsupportedOverrideKey = "teleprompter-unsupported-override";
 const unsupportedOverrideParam = "override_unsupported_flag";
+const projectHandleDb = "teleprompter-project-handles";
+const projectHandleStore = "handles";
+const recentProjectHandleKey = "recentProjectHandle";
+const editorSessionFlag = "teleprompter-open-editor-after-create";
 const supportedSlideTypes = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
 
 const els = {
@@ -19,6 +23,17 @@ const els = {
   tabs: Array.from(document.querySelectorAll(".tab")),
   panels: Array.from(document.querySelectorAll(".view-panel")),
   targetFrame: document.querySelector("#targetFrame"),
+  saveScriptButton: document.querySelector("#saveScriptButton"),
+  scriptEditor: document.querySelector("#scriptEditor"),
+  scriptPreview: document.querySelector("#scriptPreview"),
+  slideUploadInput: document.querySelector("#slideUploadInput"),
+  uploadSlidesButton: document.querySelector("#uploadSlidesButton"),
+  editorSlideList: document.querySelector("#editorSlideList"),
+  slideEditorTitle: document.querySelector("#slideEditorTitle"),
+  slideTitleEditor: document.querySelector("#slideTitleEditor"),
+  slideNoteEditor: document.querySelector("#slideNoteEditor"),
+  saveSlideNoteButton: document.querySelector("#saveSlideNoteButton"),
+  editorStatus: document.querySelector("#editorStatus"),
   slideTitle: document.querySelector("#slideTitle"),
   slidePreview: document.querySelector("#slidePreview"),
   slideEmpty: document.querySelector("#slideEmpty"),
@@ -63,6 +78,7 @@ const state = {
   activeBlock: 0,
   projectHandle: null,
   manifest: null,
+  promptMarkdown: "",
   slides: [],
   slideUrls: [],
   targetReady: false,
@@ -171,6 +187,45 @@ function redirectToUnsupported() {
   window.location.replace(unsupportedUrl.href);
 }
 
+function shouldOpenRecentProjectInEditor() {
+  const url = new URL(window.location.href);
+  return url.searchParams.get("editor") === "1" || sessionStorage.getItem(editorSessionFlag) === "true";
+}
+
+function clearEditorBootstrapFlag() {
+  sessionStorage.removeItem(editorSessionFlag);
+  const url = new URL(window.location.href);
+  if (!url.searchParams.has("editor")) return;
+
+  url.searchParams.delete("editor");
+  window.history.replaceState({}, document.title, url);
+}
+
+function openProjectDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(projectHandleDb, 1);
+    request.addEventListener("upgradeneeded", () => {
+      request.result.createObjectStore(projectHandleStore);
+    });
+    request.addEventListener("success", () => resolve(request.result));
+    request.addEventListener("error", () => reject(request.error));
+  });
+}
+
+async function loadRecentProjectHandle() {
+  const db = await openProjectDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction(projectHandleStore, "readonly");
+      const request = transaction.objectStore(projectHandleStore).get(recentProjectHandleKey);
+      request.addEventListener("success", () => resolve(request.result || null));
+      request.addEventListener("error", () => reject(request.error));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 function setProjectStatus(message) {
   els.projectStatus.textContent = message;
 }
@@ -271,6 +326,7 @@ function normalizeManifest(manifest) {
   return {
     teleprompter: manifest.teleprompter || "teleprompter.md",
     slides: Array.isArray(manifest.slides) ? manifest.slides : [],
+    notes: typeof manifest.notes === "string" ? manifest.notes : "",
     vlc: {
       host: manifest.vlc?.host || state.vlc.host,
       port: manifest.vlc?.port || state.vlc.port,
@@ -301,6 +357,10 @@ async function readTextFile(rootHandle, path) {
 }
 
 async function writeTextFile(directoryHandle, path, content) {
+  await writeFileContent(directoryHandle, path, content);
+}
+
+async function writeFileContent(directoryHandle, path, content) {
   const handle = await getHandleFromPath(directoryHandle, path, { create: true });
   const writable = await handle.createWritable();
   await writable.write(content);
@@ -311,35 +371,17 @@ async function ensureDirectory(directoryHandle, path) {
   await getHandleFromPath(directoryHandle, path, { create: true, directory: true });
 }
 
-async function createProject() {
-  if (!supportsFileSystemAccess()) {
-    setProjectStatus("File System Access API is unavailable. Use Chromium on localhost or HTTPS.");
-    return;
+async function pathExists(directoryHandle, path) {
+  try {
+    await getHandleFromPath(directoryHandle, path);
+    return true;
+  } catch {
+    return false;
   }
+}
 
-  const directoryHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-  await ensureDirectory(directoryHandle, "slides");
-
-  const manifest = {
-    teleprompter: "teleprompter.md",
-    slides: [
-      {
-        file: "slides/001.png",
-        note: "Add your first slide image to slides/001.png and update this note."
-      }
-    ],
-    vlc: {
-      host: state.vlc.host,
-      port: state.vlc.port,
-      password: state.vlc.password
-    }
-  };
-
-  await writeTextFile(directoryHandle, "manifest.json", `${JSON.stringify(manifest, null, 2)}\n`);
-  await writeTextFile(directoryHandle, "teleprompter.md", "# Teleprompter\n\nAdd your script here.\n\nEach paragraph or line becomes a prompt line.\n");
-
-  state.projectHandle = directoryHandle;
-  await loadProjectFromHandle(directoryHandle);
+async function createProject() {
+  window.location.href = "create/";
 }
 
 async function loadProject() {
@@ -352,7 +394,7 @@ async function loadProject() {
   await loadProjectFromHandle(directoryHandle);
 }
 
-async function loadProjectFromHandle(directoryHandle) {
+async function loadProjectFromHandle(directoryHandle, options = {}) {
   releaseSlideUrls();
   state.projectHandle = directoryHandle;
 
@@ -361,6 +403,7 @@ async function loadProjectFromHandle(directoryHandle) {
     state.manifest = normalizeManifest(JSON.parse(manifestText));
     const promptText = await readTextFile(directoryHandle, state.manifest.teleprompter);
 
+    state.promptMarkdown = promptText;
     state.promptBlocks = markdownToPromptBlocks(promptText);
     state.slides = await Promise.all(state.manifest.slides.map((slide, index) => loadSlide(directoryHandle, slide, index)));
     state.slideUrls = state.slides.map((slide) => slide.url).filter(Boolean);
@@ -376,10 +419,12 @@ async function loadProjectFromHandle(directoryHandle) {
     state.activeBlock = 0;
     setProjectStatus(`Loaded ${directoryHandle.name}: ${state.slides.length} slide(s), ${state.promptBlocks.length} prompt block(s).`);
     renderAll();
-    await launchTarget();
+    if (options.activeView) await setActiveView(options.activeView, { force: true });
+    if (options.launch !== false) await launchTarget();
   } catch (error) {
     setProjectStatus(`Project load failed: ${error.message}`);
     state.manifest = null;
+    state.promptMarkdown = "";
     state.slides = [];
     state.promptBlocks = [];
     renderAll();
@@ -570,6 +615,7 @@ function renderAll() {
   renderPresentationButtons();
   renderBlankButton();
   renderSlides();
+  renderEditor();
   renderPrompt();
   renderPromptControls();
   renderVlcConfig();
@@ -629,10 +675,210 @@ function renderSlides() {
   if (slide.url) els.slidePreview.src = slide.url;
 }
 
+function renderEditor() {
+  const hasProject = Boolean(state.projectHandle && state.manifest);
+  els.saveScriptButton.disabled = !hasProject;
+  els.uploadSlidesButton.disabled = !hasProject;
+  els.slideUploadInput.disabled = !hasProject;
+  els.saveSlideNoteButton.disabled = !hasProject || !state.manifest.slides[state.selectedSlide];
+  els.slideTitleEditor.disabled = !hasProject || !state.manifest.slides[state.selectedSlide];
+  els.slideNoteEditor.disabled = !hasProject || !state.manifest.slides[state.selectedSlide];
+
+  if (document.activeElement !== els.scriptEditor) {
+    els.scriptEditor.value = state.promptMarkdown;
+  }
+  els.scriptEditor.disabled = !hasProject;
+  renderScriptPreview(els.scriptEditor.value);
+  renderEditorSlides();
+  renderSlideNoteEditor();
+
+  if (!hasProject) {
+    els.editorStatus.textContent = "Load or create a project to edit slides.";
+  } else if (state.manifest.notes) {
+    els.editorStatus.textContent = state.manifest.notes;
+  }
+}
+
+function renderScriptPreview(markdown) {
+  try {
+    const blocks = markdownToPromptBlocks(markdown || "");
+    els.scriptPreview.textContent = "";
+
+    if (!blocks.length) {
+      els.scriptPreview.textContent = "Script preview is empty.";
+      return;
+    }
+
+    blocks.forEach((block) => {
+      const section = document.createElement("section");
+      section.className = "prompt-block";
+      section.innerHTML = block.html;
+      els.scriptPreview.append(section);
+    });
+  } catch (error) {
+    els.scriptPreview.textContent = `Preview unavailable: ${error.message}`;
+  }
+}
+
+function renderEditorSlides() {
+  els.editorSlideList.textContent = "";
+
+  if (!state.manifest) {
+    els.editorSlideList.textContent = "Load a project to edit slides.";
+    return;
+  }
+
+  if (!state.manifest.slides.length) {
+    els.editorSlideList.textContent = "No slides yet. Upload images to add slides.";
+    return;
+  }
+
+  state.manifest.slides.forEach((slide, index) => {
+    const loadedSlide = state.slides[index] || slide;
+    const button = document.createElement("button");
+    button.className = "slide-list-item";
+    button.type = "button";
+    button.classList.toggle("active", index === state.selectedSlide);
+    button.innerHTML = `<strong>${index + 1}. ${escapeHtml(slide.title || loadedSlide.name || slide.file || "Slide")}</strong><span>${escapeHtml(slide.note || loadedSlide.error || "No note")}</span>`;
+    button.addEventListener("click", () => selectSlide(index));
+    els.editorSlideList.append(button);
+  });
+}
+
+function renderSlideNoteEditor() {
+  const slide = state.manifest?.slides[state.selectedSlide];
+
+  if (!slide) {
+    els.slideEditorTitle.textContent = "No slide selected";
+    els.slideTitleEditor.value = "";
+    els.slideNoteEditor.value = "";
+    return;
+  }
+
+  els.slideEditorTitle.textContent = `Slide ${state.selectedSlide + 1}`;
+  if (document.activeElement !== els.slideTitleEditor) {
+    els.slideTitleEditor.value = slide.title || "";
+  }
+  if (document.activeElement !== els.slideNoteEditor) {
+    els.slideNoteEditor.value = slide.note || "";
+  }
+}
+
+async function saveManifest() {
+  if (!state.projectHandle || !state.manifest) throw new Error("Load a project before saving.");
+  await writeTextFile(state.projectHandle, "manifest.json", `${JSON.stringify(state.manifest, null, 2)}\n`);
+}
+
+async function saveScript() {
+  if (!state.projectHandle || !state.manifest) {
+    setProjectStatus("Load a project before saving the script.");
+    return;
+  }
+
+  const markdown = els.scriptEditor.value;
+  await writeTextFile(state.projectHandle, state.manifest.teleprompter, markdown);
+  state.promptMarkdown = markdown;
+  state.promptBlocks = markdownToPromptBlocks(markdown);
+  state.activeBlock = 0;
+  setProjectStatus(`Saved ${state.manifest.teleprompter}.`);
+  renderPrompt();
+  renderEditor();
+  if (state.activeView === "teleprompter") syncPromptToTarget();
+}
+
+function sanitizeFileBase(name) {
+  const clean = name
+    .toLowerCase()
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return clean || "slide";
+}
+
+async function availableSlidePath(file) {
+  const ext = extensionFor(file.name);
+  const base = sanitizeFileBase(file.name);
+
+  for (let index = 1; index < 1000; index += 1) {
+    const suffix = index === 1 ? "" : `-${index}`;
+    const path = `slides/${base}${suffix}.${ext}`;
+    if (!(await pathExists(state.projectHandle, path))) return path;
+  }
+
+  throw new Error(`Could not find an available filename for ${file.name}.`);
+}
+
+async function reloadSlidesFromManifest() {
+  releaseSlideUrls();
+  state.slides = await Promise.all(state.manifest.slides.map((slide, index) => loadSlide(state.projectHandle, slide, index)));
+  state.slideUrls = state.slides.map((slide) => slide.url).filter(Boolean);
+  state.selectedSlide = Math.min(state.selectedSlide, Math.max(state.slides.length - 1, 0));
+  renderSlides();
+  renderEditor();
+  if (state.activeView === "presentation") syncSlideToTarget();
+}
+
+async function uploadSlides() {
+  if (!state.projectHandle || !state.manifest) {
+    els.editorStatus.textContent = "Load a project before uploading slides.";
+    return;
+  }
+
+  const files = Array.from(els.slideUploadInput.files || []);
+  if (!files.length) {
+    els.editorStatus.textContent = "Choose one or more image files before uploading.";
+    return;
+  }
+
+  await ensureDirectory(state.projectHandle, "slides");
+  const addedSlides = [];
+
+  for (const file of files) {
+    const ext = extensionFor(file.name);
+    if (!supportedSlideTypes.has(ext)) {
+      els.editorStatus.textContent = `Skipped unsupported file: ${file.name}`;
+      continue;
+    }
+
+    const path = await availableSlidePath(file);
+    await writeFileContent(state.projectHandle, path, file);
+    addedSlides.push({
+      title: file.name.replace(/\.[^.]+$/, ""),
+      file: path,
+      note: ""
+    });
+  }
+
+  if (!addedSlides.length) return;
+
+  const firstNewSlideIndex = state.manifest.slides.length;
+  state.manifest.slides.push(...addedSlides);
+  await saveManifest();
+  state.selectedSlide = firstNewSlideIndex;
+  els.slideUploadInput.value = "";
+  await reloadSlidesFromManifest();
+  els.editorStatus.textContent = `Uploaded ${addedSlides.length} slide(s).`;
+}
+
+async function saveSlideNote() {
+  const slide = state.manifest?.slides[state.selectedSlide];
+  if (!state.projectHandle || !state.manifest || !slide) {
+    els.editorStatus.textContent = "Select a slide before saving notes.";
+    return;
+  }
+
+  slide.title = els.slideTitleEditor.value.trim();
+  slide.note = els.slideNoteEditor.value;
+  await saveManifest();
+  await reloadSlidesFromManifest();
+  els.editorStatus.textContent = `Saved note for slide ${state.selectedSlide + 1}.`;
+}
+
 function selectSlide(index) {
   state.selectedSlide = Math.max(0, Math.min(index, state.slides.length - 1));
   savePreferences();
   renderSlides();
+  renderEditor();
   if (state.activeView === "presentation") syncSlideToTarget();
 }
 
@@ -926,6 +1172,14 @@ function bindEvents() {
   els.startPromptButton.addEventListener("click", startPrompt);
   els.pausePromptButton.addEventListener("click", stopPrompt);
   els.resetPromptButton.addEventListener("click", resetPrompt);
+  els.scriptEditor.addEventListener("input", () => renderScriptPreview(els.scriptEditor.value));
+  els.saveScriptButton.addEventListener("click", () => saveScript().catch((error) => setProjectStatus(`Script save failed: ${error.message}`)));
+  els.uploadSlidesButton.addEventListener("click", () => uploadSlides().catch((error) => {
+    els.editorStatus.textContent = `Slide upload failed: ${error.message}`;
+  }));
+  els.saveSlideNoteButton.addEventListener("click", () => saveSlideNote().catch((error) => {
+    els.editorStatus.textContent = `Note save failed: ${error.message}`;
+  }));
 
   els.tabs.forEach((tab) => {
     tab.addEventListener("click", () => setActiveView(tab.dataset.view));
@@ -978,6 +1232,8 @@ function init() {
     return;
   }
 
+  const openEditorOnBoot = shouldOpenRecentProjectInEditor();
+  clearEditorBootstrapFlag();
   loadPreferences();
   bindEvents();
   renderAll();
@@ -993,6 +1249,15 @@ function init() {
 
   vlcPollTimer = window.setInterval(pollVlc, 5000);
   pollVlc();
+
+  if (openEditorOnBoot) {
+    loadRecentProjectHandle()
+      .then((directoryHandle) => {
+        if (!directoryHandle) throw new Error("No recently-created project handle was found.");
+        return loadProjectFromHandle(directoryHandle, { activeView: "editor", launch: false });
+      })
+      .catch((error) => setProjectStatus(`Could not open created project: ${error.message}`));
+  }
 }
 
 window.addEventListener("beforeunload", () => {

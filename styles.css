@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+textarea,
 .button-link {
   font: inherit;
 }
@@ -76,7 +77,8 @@ button.danger {
   background: var(--danger);
 }
 
-input {
+input,
+textarea {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--line);
@@ -88,6 +90,11 @@ input {
 
 input[type="range"] {
   padding: 0;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
 }
 
 h1,
@@ -125,6 +132,38 @@ h2 {
   min-height: 100vh;
   margin: 0 auto;
   padding: 28px 0;
+}
+
+.create-shell {
+  display: grid;
+  place-items: center;
+  width: min(860px, calc(100% - 28px));
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 28px 0;
+}
+
+.create-panel {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 18px 60px var(--shadow);
+  padding: clamp(22px, 5vw, 44px);
+}
+
+.create-copy,
+.create-status {
+  max-width: 68ch;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.create-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0 14px;
 }
 
 .unsupported-panel {
@@ -288,6 +327,16 @@ h2 {
   gap: 14px;
 }
 
+.editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.72fr);
+  gap: 14px;
+}
+
+.editor-slide-grid {
+  margin-top: 14px;
+}
+
 .tool-panel {
   min-height: 280px;
   padding: 16px;
@@ -372,6 +421,44 @@ h2 {
   color: var(--muted);
   font-size: 0.85rem;
   font-weight: 500;
+}
+
+.script-editor {
+  min-height: min(52vh, 620px);
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 0.98rem;
+}
+
+.script-preview {
+  display: grid;
+  max-height: min(52vh, 620px);
+  overflow: auto;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #0a0d0e;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.script-preview .prompt-block {
+  color: var(--text);
+  background: var(--surface-2);
+  border-radius: 8px;
+}
+
+.editor-field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.note-editor {
+  min-height: 180px;
 }
 
 .prompt-controls,
@@ -606,6 +693,7 @@ h2 {
 @media (max-width: 900px) {
   .topbar,
   .workspace-grid,
+  .editor-grid,
   .status-strip,
   .config-grid,
   .prompt-controls {

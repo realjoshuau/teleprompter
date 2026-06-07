@@ -53,6 +53,7 @@
 
       <nav class="tabs" aria-label="Controller views">
         <button id="presentationTab" class="tab active" type="button" data-view="presentation">Presentation</button>
+        <button id="editorTab" class="tab" type="button" data-view="editor">Editor</button>
         <button id="teleprompterTab" class="tab" type="button" data-view="teleprompter">Teleprompter</button>
         <button id="vlcTab" class="tab" type="button" data-view="vlc">Video Remote</button>
       </nav>
@@ -85,6 +86,70 @@
               </div>
             </div>
             <div id="slideList" class="slide-list"></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="editorPanel" class="view-panel" data-panel="editor">
+        <div class="editor-grid">
+          <section class="tool-panel editor-script-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Editor</p>
+                <h2>Teleprompter Script</h2>
+              </div>
+              <button id="saveScriptButton" type="button">Save Script</button>
+            </div>
+            <textarea
+              id="scriptEditor"
+              class="script-editor"
+              spellcheck="true"
+              placeholder="Load a project to edit teleprompter.md."
+              aria-label="Teleprompter Markdown editor"
+            ></textarea>
+          </section>
+
+          <aside class="tool-panel side-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Preview</p>
+                <h2>Rendered Script</h2>
+              </div>
+            </div>
+            <div id="scriptPreview" class="script-preview">Load a project to preview the script.</div>
+          </aside>
+        </div>
+
+        <div class="workspace-grid editor-slide-grid">
+          <section class="tool-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Slides</p>
+                <h2>Slide Assets</h2>
+              </div>
+              <button id="uploadSlidesButton" type="button">Upload Slides</button>
+            </div>
+            <input id="slideUploadInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple>
+            <div id="editorSlideList" class="slide-list"></div>
+          </section>
+
+          <aside class="tool-panel side-panel">
+            <div class="section-heading">
+              <div>
+                <p class="eyebrow">Notes</p>
+                <h2 id="slideEditorTitle">No slide selected</h2>
+              </div>
+              <button id="saveSlideNoteButton" type="button">Save Note</button>
+            </div>
+            <label class="editor-field">
+              Title
+              <input id="slideTitleEditor" type="text" autocomplete="off" spellcheck="true">
+            </label>
+            <label class="editor-field">
+              Speaker note
+              <textarea id="slideNoteEditor" class="note-editor" spellcheck="true"></textarea>
+            </label>
+            <p id="editorStatus" class="note-text">Load or create a project to edit slides.</p>
           </aside>
         </div>
       </section>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Create Project</title>
+    <link rel="stylesheet" href="../styles.css">
+  </head>
+  <body>
+    <main class="create-shell">
+      <section class="create-panel">
+        <p class="eyebrow">Project Setup</p>
+        <h1>Create Project</h1>
+        <p class="create-copy">
+          Choose an empty folder. The app will create the manifest, teleprompter file, slides folder, and a starter slide when the placeholder image is available.
+        </p>
+        <div class="create-actions">
+          <button id="chooseDirectoryButton" type="button">Choose Empty Folder</button>
+          <a class="button-link secondary" href="../">Back to Controller</a>
+        </div>
+        <p id="createStatus" class="create-status" aria-live="polite">No folder selected.</p>
+      </section>
+    </main>
+
+    <script src="create.js" defer></script>
+  </body>
+</html>
