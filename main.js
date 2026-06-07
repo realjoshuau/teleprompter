@@ -61,7 +61,7 @@ const state = {
   presentationConnection: null,
   vlc: {
     host: "127.0.0.1",
-    port: 8080,
+    port: 8090,
     password: "",
     docked: false,
     connected: false,
@@ -649,7 +649,7 @@ function renderVlcConfig() {
 
 function saveVlcConfig() {
   state.vlc.host = els.vlcHost.value.trim() || "127.0.0.1";
-  state.vlc.port = Number(els.vlcPort.value) || 8080;
+  state.vlc.port = Number(els.vlcPort.value) || 8090;
   state.vlc.password = els.vlcPassword.value;
   savePreferences();
   pollVlc();
