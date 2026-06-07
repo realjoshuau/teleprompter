@@ -213,7 +213,11 @@ h2 {
   background: var(--accent);
 }
 
-#blankPresentationButton.active {
+#launchButton.active,
+#blankPresentationButton.active,
+#closePresentationButton.active,
+#startPromptButton.active,
+#pausePromptButton.active {
   color: #08130b;
   background: var(--accent);
 }

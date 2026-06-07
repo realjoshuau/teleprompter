@@ -175,8 +175,8 @@ function setVlcStatus(message) {
   els.vlcStatus.textContent = message;
 }
 
-function postToTarget(message) {
-  if (!state.targetReady) return;
+function postToTarget(message, options = {}) {
+  if (!state.targetReady && !options.force) return;
 
   if (state.presentationConnection && state.presentationConnection.state === "connected") {
     state.presentationConnection.send(JSON.stringify(message));
@@ -205,7 +205,7 @@ function setPresentationBlanked(blanked) {
 }
 
 function closeTargetWindow() {
-  postToTarget({ type: "target:close" });
+  postToTarget({ type: "target:close" }, { force: true });
 }
 
 function extensionFor(path) {
@@ -394,6 +394,7 @@ function htmlToText(html) {
 
 async function launchTarget() {
   state.targetReady = false;
+  renderPresentationButtons();
   setScreenStatus("Launching presentation display...");
 
   try {
@@ -408,10 +409,13 @@ async function launchTarget() {
     attachPresentationConnection(connection);
     state.targetReady = true;
     state.presentationBlanked = false;
+    renderPresentationButtons();
     renderBlankButton();
     setScreenStatus("Presentation display connected.");
     syncActiveViewToTarget();
   } catch (error) {
+    state.targetReady = false;
+    renderPresentationButtons();
     setScreenStatus(`Launch failed: ${error.message}`);
   }
 }
@@ -422,6 +426,7 @@ function attachPresentationConnection(connection) {
   connection.addEventListener("connect", () => {
     state.targetReady = true;
     state.presentationBlanked = false;
+    renderPresentationButtons();
     renderBlankButton();
     setScreenStatus("Presentation display connected.");
     syncActiveViewToTarget();
@@ -429,11 +434,13 @@ function attachPresentationConnection(connection) {
 
   connection.addEventListener("close", () => {
     state.targetReady = false;
+    renderPresentationButtons();
     setScreenStatus("Presentation display closed.");
   });
 
   connection.addEventListener("terminate", () => {
     state.targetReady = false;
+    renderPresentationButtons();
     setScreenStatus("Presentation display terminated.");
   });
 }
@@ -457,6 +464,19 @@ async function setActiveView(view, options = {}) {
 async function closePresentationDisplay() {
   closeTargetWindow();
 
+  terminatePresentationConnection();
+
+  state.targetReady = false;
+  state.presentationBlanked = false;
+  state.presentationConnection = null;
+  state.presentationRequest = null;
+  els.targetFrame.removeAttribute("src");
+  renderPresentationButtons();
+  renderBlankButton();
+  setScreenStatus("Presentation display closed.");
+}
+
+function terminatePresentationConnection() {
   try {
     if (state.presentationConnection && state.presentationConnection.state !== "terminated") {
       state.presentationConnection.terminate();
@@ -464,14 +484,11 @@ async function closePresentationDisplay() {
   } catch {
     // Some receivers close themselves before the controller can terminate the connection.
   }
+}
 
-  state.targetReady = false;
-  state.presentationBlanked = false;
-  state.presentationConnection = null;
-  state.presentationRequest = null;
-  els.targetFrame.removeAttribute("src");
-  renderBlankButton();
-  setScreenStatus("Presentation display closed.");
+function closePresentationDisplayBeforeUnload() {
+  closeTargetWindow();
+  terminatePresentationConnection();
 }
 
 function syncActiveViewToTarget() {
@@ -495,11 +512,20 @@ function syncActiveViewToTarget() {
 
 function renderAll() {
   renderTabs();
+  renderPresentationButtons();
   renderBlankButton();
   renderSlides();
   renderPrompt();
+  renderPromptControls();
   renderVlcConfig();
   syncActiveViewToTarget();
+}
+
+function renderPresentationButtons() {
+  els.launchButton.classList.toggle("active", state.targetReady);
+  els.launchButton.setAttribute("aria-pressed", String(state.targetReady));
+  els.closePresentationButton.classList.toggle("active", !state.targetReady);
+  els.closePresentationButton.setAttribute("aria-pressed", String(!state.targetReady));
 }
 
 function renderBlankButton() {
@@ -634,14 +660,18 @@ function syncPromptPositionToTarget() {
 
 function startPrompt() {
   if (!state.promptBlocks.length) return;
+  if (state.promptRunning) return;
+
   state.promptRunning = true;
   lastPromptTick = performance.now();
+  renderPromptControls();
   promptAnimation = requestAnimationFrame(tickPrompt);
 }
 
 function stopPrompt() {
   state.promptRunning = false;
   cancelAnimationFrame(promptAnimation);
+  renderPromptControls();
 }
 
 function resetPrompt() {
@@ -679,6 +709,13 @@ function setActiveBlockFromScroll() {
 function applyPromptSizing(element) {
   element.style.setProperty("--prompt-font-size", `${state.promptFontSize}px`);
   element.style.setProperty("--prompt-zoom", String(state.promptZoom / 100));
+}
+
+function renderPromptControls() {
+  els.startPromptButton.classList.toggle("active", state.promptRunning);
+  els.startPromptButton.setAttribute("aria-pressed", String(state.promptRunning));
+  els.pausePromptButton.classList.toggle("active", !state.promptRunning);
+  els.pausePromptButton.setAttribute("aria-pressed", String(!state.promptRunning));
 }
 
 function renderVlcConfig() {
@@ -894,6 +931,7 @@ function init() {
 }
 
 window.addEventListener("beforeunload", () => {
+  closePresentationDisplayBeforeUnload();
   releaseSlideUrls();
   window.clearInterval(vlcPollTimer);
 });

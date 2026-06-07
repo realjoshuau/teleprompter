@@ -72,8 +72,11 @@ function blank() {
 function closePresentationWindow() {
   blank();
 
+  const connection = receiverConnection;
+  receiverConnection = null;
+
   try {
-    receiverConnection?.close();
+    connection?.close();
   } catch {
     // The controller may terminate the connection first.
   }
@@ -121,6 +124,8 @@ function attachPresentationConnection(connection) {
   connection.addEventListener("message", (event) => {
     handleControllerMessage(parseConnectionMessage(event.data));
   });
+  connection.addEventListener("close", closePresentationWindow);
+  connection.addEventListener("terminate", closePresentationWindow);
 }
 
 async function connectPresentationReceiver() {
