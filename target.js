@@ -34,18 +34,38 @@ function renderPromptBlocks(blocks, activeIndex = 0) {
 }
 
 function applyPromptSizing(data = {}) {
-  if (Number.isFinite(data.fontSize)) {
-    promptScroll.style.setProperty("--target-prompt-font-size", `${data.fontSize}px`);
-  }
-
   if (Number.isFinite(data.zoom)) {
     promptScroll.style.setProperty("--target-prompt-zoom", String(data.zoom / 100));
   }
 }
 
+function resolvePromptScrollTop(data = {}) {
+  if (!Number.isFinite(data.anchorIndex) || !Number.isFinite(data.anchorProgress)) {
+    return Number.isFinite(data.scrollTop) ? data.scrollTop : 0;
+  }
+
+  const blocks = Array.from(promptScroll.querySelectorAll(".target-prompt-block"));
+  const anchorIndex = Math.max(0, Math.min(blocks.length - 1, data.anchorIndex));
+  const anchorBlock = blocks[anchorIndex];
+
+  if (!anchorBlock) {
+    return Number.isFinite(data.scrollTop) ? data.scrollTop : 0;
+  }
+
+  const scrollRect = promptScroll.getBoundingClientRect();
+  const blockRect = anchorBlock.getBoundingClientRect();
+  const nextBlock = blocks[anchorIndex + 1];
+  const nextTop = nextBlock?.getBoundingClientRect().top ?? blockRect.top + blockRect.height;
+  const progress = Math.max(0, Math.min(1, data.anchorProgress));
+  const marker = scrollRect.top + promptScroll.clientHeight * 0.36;
+  const targetAnchor = blockRect.top + (nextTop - blockRect.top) * progress;
+
+  return promptScroll.scrollTop + targetAnchor - marker;
+}
+
 function updatePromptPosition(scrollTop, activeIndex, data = {}) {
   applyPromptSizing(data);
-  promptScroll.scrollTop = Number.isFinite(scrollTop) ? scrollTop : 0;
+  promptScroll.scrollTop = resolvePromptScrollTop({ ...data, scrollTop });
   promptScroll.querySelectorAll(".target-prompt-block").forEach((block, index) => {
     block.classList.toggle("active", index === activeIndex);
   });
@@ -60,8 +80,8 @@ function showSlide(src, alt) {
 function showPrompt(data) {
   applyPromptSizing(data);
   renderPromptBlocks(data.blocks, data.activeIndex);
-  updatePromptPosition(data.scrollTop, data.activeIndex, data);
   setMode("teleprompter");
+  updatePromptPosition(data.scrollTop, data.activeIndex, data);
 }
 
 function blank() {

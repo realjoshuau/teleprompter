@@ -693,22 +693,28 @@ function updateCurrentLine() {
 }
 
 function syncPromptToTarget() {
+  const anchor = getPromptAnchor();
+
   postToTarget({
     type: "target:prompt",
     blocks: state.promptBlocks,
     scrollTop: els.teleprompterScroll.scrollTop,
+    anchorIndex: anchor.index,
+    anchorProgress: anchor.progress,
     activeIndex: state.activeBlock,
-    fontSize: state.promptFontSize,
     zoom: state.promptZoom
   });
 }
 
 function syncPromptPositionToTarget() {
+  const anchor = getPromptAnchor();
+
   postToTarget({
     type: "target:prompt-position",
     scrollTop: els.teleprompterScroll.scrollTop,
+    anchorIndex: anchor.index,
+    anchorProgress: anchor.progress,
     activeIndex: state.activeBlock,
-    fontSize: state.promptFontSize,
     zoom: state.promptZoom
   });
 }
@@ -759,6 +765,28 @@ function setActiveBlockFromScroll() {
     state.activeBlock = activeIndex;
     updateCurrentLine();
   }
+}
+
+function getPromptAnchor() {
+  const blocks = Array.from(els.teleprompterScroll.querySelectorAll(".prompt-block"));
+  const activeBlock = blocks[state.activeBlock];
+
+  if (!activeBlock) {
+    return { index: 0, progress: 0 };
+  }
+
+  const containerTop = els.teleprompterScroll.getBoundingClientRect().top;
+  const marker = containerTop + els.teleprompterScroll.clientHeight * 0.36;
+  const activeTop = activeBlock.getBoundingClientRect().top;
+  const nextBlock = blocks[state.activeBlock + 1];
+  const nextTop = nextBlock?.getBoundingClientRect().top ?? activeTop + activeBlock.getBoundingClientRect().height;
+  const span = nextTop - activeTop;
+  const progress = span > 0 ? (marker - activeTop) / span : 0;
+
+  return {
+    index: state.activeBlock,
+    progress: Math.max(0, Math.min(1, progress))
+  };
 }
 
 function applyPromptSizing(element) {
