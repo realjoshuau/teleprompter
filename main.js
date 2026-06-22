@@ -640,6 +640,30 @@ function changeSlide(delta) {
   selectSlide(state.selectedSlide + delta);
 }
 
+function isEditableTarget(target) {
+  if (!(target instanceof Element)) return false;
+
+  return Boolean(target.closest("input, textarea, select, button, [contenteditable=''], [contenteditable='true']"));
+}
+
+function handleSlideKeyboard(event) {
+  if (state.activeView !== "presentation" || event.repeat || isEditableTarget(event.target)) return;
+
+  const slideKeys = {
+    ArrowLeft: -1,
+    ArrowUp: -1,
+    ArrowRight: 1,
+    ArrowDown: 1,
+    " ": 1,
+    Spacebar: 1
+  };
+  const delta = slideKeys[event.key];
+  if (!delta) return;
+
+  event.preventDefault();
+  changeSlide(delta);
+}
+
 function syncSlideToTarget() {
   const slide = state.slides[state.selectedSlide];
   if (!slide?.url) {
@@ -948,6 +972,7 @@ function bindEvents() {
   document.addEventListener("click", () => setAboutOpen(false));
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setAboutOpen(false);
+    handleSlideKeyboard(event);
   });
   els.prevSlideButton.addEventListener("click", () => changeSlide(-1));
   els.nextSlideButton.addEventListener("click", () => changeSlide(1));
