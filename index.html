@@ -113,6 +113,23 @@
               <label for="promptZoom">Zoom</label>
               <input id="promptZoom" type="range" min="75" max="200" step="5">
               <span id="promptZoomValue">100%</span>
+              <div class="progress-controls" aria-label="Presentation progress settings">
+                <label class="toggle-row progress-toggle">
+                  <input id="progressBarEnabled" type="checkbox">
+                  <span>Progress bar</span>
+                </label>
+                <label class="progress-position-field" for="progressBarPosition">
+                  <span>Position</span>
+                  <select id="progressBarPosition">
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                  </select>
+                </label>
+                <label class="toggle-row progress-toggle">
+                  <input id="progressPercentEnabled" type="checkbox">
+                  <span>Show percent</span>
+                </label>
+              </div>
             </div>
             <div id="teleprompterScroll" class="teleprompter-scroll" tabindex="0" aria-label="Teleprompter script"></div>
           </section>

@@ -35,6 +35,9 @@ const els = {
   promptFontSizeValue: document.querySelector("#promptFontSizeValue"),
   promptZoom: document.querySelector("#promptZoom"),
   promptZoomValue: document.querySelector("#promptZoomValue"),
+  progressBarEnabled: document.querySelector("#progressBarEnabled"),
+  progressBarPosition: document.querySelector("#progressBarPosition"),
+  progressPercentEnabled: document.querySelector("#progressPercentEnabled"),
   teleprompterScroll: document.querySelector("#teleprompterScroll"),
   currentLineTitle: document.querySelector("#currentLineTitle"),
   currentLineText: document.querySelector("#currentLineText"),
@@ -58,6 +61,9 @@ const state = {
   scrollSpeed: 24,
   promptFontSize: 32,
   promptZoom: 100,
+  progressBarEnabled: false,
+  progressBarPosition: "bottom",
+  progressPercentEnabled: false,
   promptRunning: false,
   promptBlocks: [],
   activeBlock: 0,
@@ -95,6 +101,9 @@ function loadPreferences() {
     state.scrollSpeed = Number.isFinite(saved.scrollSpeed) ? saved.scrollSpeed : state.scrollSpeed;
     state.promptFontSize = Number.isFinite(saved.promptFontSize) ? saved.promptFontSize : state.promptFontSize;
     state.promptZoom = Number.isFinite(saved.promptZoom) ? saved.promptZoom : state.promptZoom;
+    state.progressBarEnabled = typeof saved.progressBarEnabled === "boolean" ? saved.progressBarEnabled : state.progressBarEnabled;
+    state.progressBarPosition = saved.progressBarPosition === "top" ? "top" : "bottom";
+    state.progressPercentEnabled = typeof saved.progressPercentEnabled === "boolean" ? saved.progressPercentEnabled : state.progressPercentEnabled;
     state.vlc = { ...state.vlc, ...(saved.vlc || {}) };
   } catch {
     localStorage.removeItem(storageKey);
@@ -108,6 +117,9 @@ function savePreferences() {
     scrollSpeed: state.scrollSpeed,
     promptFontSize: state.promptFontSize,
     promptZoom: state.promptZoom,
+    progressBarEnabled: state.progressBarEnabled,
+    progressBarPosition: state.progressBarPosition,
+    progressPercentEnabled: state.progressPercentEnabled,
     vlc: {
       host: state.vlc.host,
       port: state.vlc.port,
@@ -718,6 +730,7 @@ function updateCurrentLine() {
 
 function syncPromptToTarget() {
   const anchor = getPromptAnchor();
+  const progressState = getPromptProgressState(anchor);
 
   postToTarget({
     type: "target:prompt",
@@ -726,12 +739,14 @@ function syncPromptToTarget() {
     anchorIndex: anchor.index,
     anchorProgress: anchor.progress,
     activeIndex: state.activeBlock,
-    zoom: state.promptZoom
+    zoom: state.promptZoom,
+    ...progressState
   });
 }
 
 function syncPromptPositionToTarget() {
   const anchor = getPromptAnchor();
+  const progressState = getPromptProgressState(anchor);
 
   postToTarget({
     type: "target:prompt-position",
@@ -739,7 +754,8 @@ function syncPromptPositionToTarget() {
     anchorIndex: anchor.index,
     anchorProgress: anchor.progress,
     activeIndex: state.activeBlock,
-    zoom: state.promptZoom
+    zoom: state.promptZoom,
+    ...progressState
   });
 }
 
@@ -813,6 +829,24 @@ function getPromptAnchor() {
   };
 }
 
+function getPromptProgressState(anchor = getPromptAnchor()) {
+  const lastBlockIndex = state.promptBlocks.length - 1;
+  let progressValue = 0;
+
+  if (lastBlockIndex > 0) {
+    progressValue = (state.activeBlock + anchor.progress) / lastBlockIndex;
+  } else if (lastBlockIndex === 0 && state.activeBlock === 0) {
+    progressValue = 1;
+  }
+
+  return {
+    progressEnabled: state.progressBarEnabled,
+    progressPosition: state.progressBarPosition,
+    progressPercentEnabled: state.progressPercentEnabled,
+    progressValue: Math.max(0, Math.min(1, progressValue))
+  };
+}
+
 function applyPromptSizing(element) {
   element.style.setProperty("--prompt-font-size", `${state.promptFontSize}px`);
   element.style.setProperty("--prompt-zoom", String(state.promptZoom / 100));
@@ -823,6 +857,11 @@ function renderPromptControls() {
   els.startPromptButton.setAttribute("aria-pressed", String(state.promptRunning));
   els.pausePromptButton.classList.toggle("active", !state.promptRunning);
   els.pausePromptButton.setAttribute("aria-pressed", String(!state.promptRunning));
+  els.progressBarEnabled.checked = state.progressBarEnabled;
+  els.progressBarPosition.value = state.progressBarPosition;
+  els.progressBarPosition.disabled = !state.progressBarEnabled;
+  els.progressPercentEnabled.checked = state.progressPercentEnabled;
+  els.progressPercentEnabled.disabled = !state.progressBarEnabled;
 }
 
 function renderVlcConfig() {
@@ -1004,6 +1043,25 @@ function bindEvents() {
     els.promptZoomValue.textContent = `${state.promptZoom}%`;
     applyPromptSizing(els.teleprompterScroll);
     setActiveBlockFromScroll();
+    syncPromptPositionToTarget();
+    savePreferences();
+  });
+
+  els.progressBarEnabled.addEventListener("change", () => {
+    state.progressBarEnabled = els.progressBarEnabled.checked;
+    renderPromptControls();
+    syncPromptPositionToTarget();
+    savePreferences();
+  });
+
+  els.progressBarPosition.addEventListener("change", () => {
+    state.progressBarPosition = els.progressBarPosition.value === "top" ? "top" : "bottom";
+    syncPromptPositionToTarget();
+    savePreferences();
+  });
+
+  els.progressPercentEnabled.addEventListener("change", () => {
+    state.progressPercentEnabled = els.progressPercentEnabled.checked;
     syncPromptPositionToTarget();
     savePreferences();
   });

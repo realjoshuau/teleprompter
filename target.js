@@ -4,15 +4,23 @@ const slideView = document.querySelector("#targetSlide");
 const promptView = document.querySelector("#targetPrompt");
 const slideImage = document.querySelector("#targetSlideImage");
 const promptScroll = document.querySelector("#targetPromptScroll");
+const progressOverlay = document.querySelector("#targetProgress");
+const progressFill = document.querySelector("#targetProgressFill");
+const progressPercent = document.querySelector("#targetProgressPercent");
 
 let promptBlocks = [];
 let receiverConnection = null;
+let currentMode = "blank";
 
 function setMode(mode) {
+  currentMode = mode;
   stage.className = `target-stage ${mode}`;
   blankView.hidden = mode !== "blank";
   slideView.hidden = mode !== "slide";
   promptView.hidden = mode !== "teleprompter";
+  if (mode !== "teleprompter") {
+    updateProgressOverlay({ progressEnabled: false });
+  }
 }
 
 function renderPromptBlocks(blocks, activeIndex = 0) {
@@ -69,6 +77,30 @@ function updatePromptPosition(scrollTop, activeIndex, data = {}) {
   promptScroll.querySelectorAll(".target-prompt-block").forEach((block, index) => {
     block.classList.toggle("active", index === activeIndex);
   });
+  if (currentMode === "teleprompter") {
+    updateProgressOverlay(data);
+  }
+}
+
+function updateProgressOverlay(data = {}) {
+  const enabled = Boolean(data.progressEnabled);
+  progressOverlay.hidden = !enabled;
+
+  if (!enabled) {
+    progressFill.style.width = "0%";
+    progressPercent.hidden = true;
+    progressPercent.textContent = "";
+    return;
+  }
+
+  const value = Number.isFinite(data.progressValue) ? Math.max(0, Math.min(1, data.progressValue)) : 0;
+  const percent = Math.round(value * 100);
+
+  progressOverlay.classList.toggle("target-progress-top", data.progressPosition === "top");
+  progressOverlay.classList.toggle("target-progress-bottom", data.progressPosition !== "top");
+  progressFill.style.width = `${value * 100}%`;
+  progressPercent.hidden = !data.progressPercentEnabled;
+  progressPercent.textContent = data.progressPercentEnabled ? `${percent}%` : "";
 }
 
 function showSlide(src, alt) {
