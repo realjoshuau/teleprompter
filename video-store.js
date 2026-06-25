@@ -136,10 +136,22 @@
 
   async function getVideoFile(id) {
     const record = await getVideo(id);
-    if (!record?.handle) throw new Error("Video handle was not found. Reselect the video folder from the controller.");
-    const allowed = await verifyPermission(record.handle);
+    let handle = record?.handle;
+
+    if (!handle) {
+      const directoryHandle = await getSetting(folderKey);
+      const name = record?.name || (typeof id === "string" && id.startsWith("video:") ? id.slice(6) : "");
+      if (directoryHandle && name) {
+        const allowed = await verifyPermission(directoryHandle);
+        if (!allowed) throw new Error("Video folder permission was not granted. Reselect the video folder from the controller.");
+        handle = await directoryHandle.getFileHandle(name);
+      }
+    }
+
+    if (!handle) throw new Error("Video handle was not found. Reselect the video folder from the controller.");
+    const allowed = await verifyPermission(handle);
     if (!allowed) throw new Error("Video permission was not granted. Reselect the video folder from the controller.");
-    return record.handle.getFile();
+    return handle.getFile();
   }
 
   window.videoStore = {

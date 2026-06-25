@@ -263,7 +263,7 @@ h2 {
 
 .timer-strip {
   display: grid;
-  grid-template-columns: minmax(130px, 0.7fr) minmax(150px, 0.8fr) auto minmax(300px, 1fr);
+  grid-template-columns: minmax(120px, 0.6fr) minmax(140px, 0.7fr) auto minmax(250px, 0.8fr) minmax(280px, 1.1fr);
   align-items: end;
   gap: 12px;
   margin-bottom: 14px;
@@ -283,6 +283,24 @@ h2 {
   color: var(--text);
   font-size: 1.8rem;
   line-height: 1;
+}
+
+.stage-timer-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.stage-timer-toggles > span {
+  flex-basis: 100%;
+}
+
+.stage-timer-toggles .toggle-row {
+  margin: 0;
 }
 
 .tabs {
@@ -759,12 +777,21 @@ h2 {
 .target-progress-percent {
   position: fixed;
   right: 1.4vw;
-  bottom: 1.2vh;
   color: #fff;
   font-size: clamp(18px, 2vw, 34px);
   font-weight: 800;
   line-height: 1;
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.75);
+}
+
+.target-progress-top .target-progress-percent {
+  top: 1.2vh;
+  bottom: auto;
+}
+
+.target-progress-bottom .target-progress-percent {
+  top: auto;
+  bottom: 1.2vh;
 }
 
 .stage-view {
@@ -773,6 +800,31 @@ h2 {
   overflow: hidden;
   background: #000;
   color: #f4f4f1;
+}
+
+.stage-fullscreen-button {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(10, 12, 12, 0.84);
+  color: #f4f4f1;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.32);
+}
+
+.stage-fullscreen-button:hover {
+  background: rgba(28, 32, 32, 0.94);
+}
+
+.stage-fullscreen-active .stage-fullscreen-button {
+  opacity: 0;
+}
+
+.stage-fullscreen-active .stage-fullscreen-button:hover,
+.stage-fullscreen-active .stage-fullscreen-button:focus,
+.stage-fullscreen-active .stage-fullscreen-button:focus-visible {
+  opacity: 1;
 }
 
 .stage-slide-view {
@@ -892,11 +944,6 @@ h2 {
 
 .stage-prompt-view .target-progress {
   z-index: 7;
-}
-
-.stage-prompt-view .target-progress-top .target-progress-percent {
-  top: 1.2vh;
-  bottom: auto;
 }
 
 .stage-video-view {

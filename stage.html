@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body class="target-page">
+    <button id="stageFullscreenButton" class="stage-fullscreen-button" type="button">Full Screen</button>
     <main id="stageRoot" class="stage-view blank">
       <section id="stageBlank" class="target-blank" aria-live="polite">
         <p>Stage view blanked.</p>
@@ -21,7 +22,7 @@
             <span>Time</span>
             <strong id="stageClock">--:--</strong>
           </div>
-          <div class="stage-clock-block">
+          <div id="stageTimerBlock" class="stage-clock-block">
             <span>Timer</span>
             <strong id="stageTimer">00:00</strong>
           </div>
@@ -45,7 +46,7 @@
             <span>Time</span>
             <strong id="stagePromptClock">--:--</strong>
           </div>
-          <div>
+          <div id="stagePromptTimerBlock">
             <span>Timer</span>
             <strong id="stagePromptTimer">00:00</strong>
           </div>
@@ -66,7 +67,7 @@
             <span>Time</span>
             <strong id="stageVideoClock">--:--</strong>
           </div>
-          <div>
+          <div id="stageVideoTimerBlock">
             <span>Timer</span>
             <strong id="stageVideoTimer">00:00</strong>
           </div>
@@ -79,7 +80,6 @@
       </section>
     </main>
 
-    <script src="video-store.js" defer></script>
     <script src="stage.js" defer></script>
   </body>
 </html>

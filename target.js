@@ -15,6 +15,7 @@ let promptBlocks = [];
 let receiverConnection = null;
 let currentMode = "blank";
 let videoUrl = "";
+let pendingVideoData = null;
 
 function setMode(mode) {
   currentMode = mode;
@@ -47,6 +48,10 @@ function renderPromptBlocks(blocks, activeIndex = 0) {
 }
 
 function applyPromptSizing(data = {}) {
+  if (Number.isFinite(data.fontSize)) {
+    promptScroll.style.setProperty("--target-prompt-font-size", `${data.fontSize}px`);
+  }
+
   if (Number.isFinite(data.zoom)) {
     promptScroll.style.setProperty("--target-prompt-zoom", String(data.zoom / 100));
   }
@@ -122,6 +127,7 @@ function showPrompt(data) {
 }
 
 function unloadVideo() {
+  pendingVideoData = null;
   videoPlayer.pause();
   videoPlayer.removeAttribute("src");
   videoPlayer.load();
@@ -131,13 +137,12 @@ function unloadVideo() {
   videoStatus.textContent = "No embedded video loaded.";
 }
 
-async function loadVideo(data = {}) {
+async function loadVideo(data = {}, file = data.file) {
   unloadVideo();
   setMode("video");
 
   try {
-    if (!window.videoStore) throw new Error("Video store is unavailable.");
-    const file = await window.videoStore.getVideoFile(data.id);
+    if (!(file instanceof Blob)) throw new Error("Video file was not received from the controller.");
     videoUrl = URL.createObjectURL(file);
     videoPlayer.src = videoUrl;
     videoPlayer.currentTime = Number.isFinite(data.currentTime) ? data.currentTime : 0;
@@ -187,6 +192,12 @@ function closePresentationWindow() {
 }
 
 function handleControllerMessage(message) {
+  if (message instanceof Blob || message instanceof ArrayBuffer) {
+    const file = message instanceof Blob ? message : new Blob([message], { type: pendingVideoData?.fileType || "" });
+    loadVideo(pendingVideoData || {}, file);
+    return;
+  }
+
   if (message.type === "target:blank") {
     blank();
     return;
@@ -208,12 +219,21 @@ function handleControllerMessage(message) {
   }
 
   if (message.type === "target:prompt-position") {
-    updatePromptPosition(message.scrollTop, message.activeIndex, message);
+    if (currentMode === "teleprompter") updatePromptPosition(message.scrollTop, message.activeIndex, message);
     return;
   }
 
   if (message.type === "target:video-load") {
-    loadVideo(message);
+    if (message.file instanceof Blob) {
+      loadVideo(message, message.file);
+    } else {
+      pendingVideoData = message;
+      unloadVideo();
+      setMode("video");
+      pendingVideoData = message;
+      videoStatus.hidden = false;
+      videoStatus.textContent = "Loading embedded video from controller...";
+    }
     return;
   }
 
@@ -238,6 +258,7 @@ function parseConnectionMessage(data) {
 
 function attachPresentationConnection(connection) {
   receiverConnection = connection;
+  if ("binaryType" in connection) connection.binaryType = "blob";
   connection.addEventListener("message", (event) => {
     handleControllerMessage(parseConnectionMessage(event.data));
   });

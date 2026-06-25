@@ -27,6 +27,9 @@ const els = {
   timerStartButton: document.querySelector("#timerStartButton"),
   timerPauseButton: document.querySelector("#timerPauseButton"),
   timerResetButton: document.querySelector("#timerResetButton"),
+  stageSlideTimerVisible: document.querySelector("#stageSlideTimerVisible"),
+  stagePromptTimerVisible: document.querySelector("#stagePromptTimerVisible"),
+  stageVideoTimerVisible: document.querySelector("#stageVideoTimerVisible"),
   tabs: Array.from(document.querySelectorAll(".tab")),
   panels: Array.from(document.querySelectorAll(".view-panel")),
   targetFrame: document.querySelector("#targetFrame"),
@@ -105,14 +108,18 @@ const state = {
   presentationConnection: null,
   stageReady: false,
   stageBlanked: false,
-  stageRequest: null,
-  stageConnection: null,
+  stageWindow: null,
   timer: {
     mode: "stopwatch",
     durationMs: 300000,
     elapsedMs: 0,
     running: false,
     startedAt: 0
+  },
+  stageTimers: {
+    slide: true,
+    prompt: true,
+    video: true
   },
   about: {
     mode: "development",
@@ -167,6 +174,11 @@ function loadPreferences() {
     state.timer.mode = state.timer.mode === "countdown" ? "countdown" : "stopwatch";
     state.timer.durationMs = Number.isFinite(state.timer.durationMs) ? state.timer.durationMs : 300000;
     state.timer.elapsedMs = Number.isFinite(state.timer.elapsedMs) ? state.timer.elapsedMs : 0;
+    state.stageTimers = {
+      slide: typeof saved.stageTimers?.slide === "boolean" ? saved.stageTimers.slide : state.stageTimers.slide,
+      prompt: typeof saved.stageTimers?.prompt === "boolean" ? saved.stageTimers.prompt : state.stageTimers.prompt,
+      video: typeof saved.stageTimers?.video === "boolean" ? saved.stageTimers.video : state.stageTimers.video
+    };
     state.vlc = { ...state.vlc, ...(saved.vlc || {}) };
   } catch {
     localStorage.removeItem(storageKey);
@@ -192,6 +204,7 @@ function savePreferences() {
       durationMs: state.timer.durationMs,
       elapsedMs: getTimerElapsedMs()
     },
+    stageTimers: state.stageTimers,
     vlc: {
       host: state.vlc.host,
       port: state.vlc.port,
@@ -323,8 +336,7 @@ function getDisplay(display) {
     ? {
       readyKey: "stageReady",
       blankedKey: "stageBlanked",
-      requestKey: "stageRequest",
-      connectionKey: "stageConnection",
+      windowKey: "stageWindow",
       url: "stage.html",
       label: "Stage",
       setStatus: setStageStatus,
@@ -348,6 +360,14 @@ function postToDisplay(display, message, options = {}) {
   const target = getDisplay(display);
   if (!state[target.readyKey] && !options.force) return;
 
+  if (display === "stage") {
+    const stageWindow = state[target.windowKey];
+    if (stageWindow && !stageWindow.closed) {
+      stageWindow.postMessage(message, window.location.origin);
+    }
+    return;
+  }
+
   const connection = state[target.connectionKey];
   if (connection && connection.state === "connected") {
     connection.send(JSON.stringify(message));
@@ -356,6 +376,30 @@ function postToDisplay(display, message, options = {}) {
 
   if (display === "presenter" && els.targetFrame.contentWindow) {
     els.targetFrame.contentWindow.postMessage(message, window.location.origin);
+  }
+}
+
+function postVideoLoadToDisplay(display, payload, file) {
+  const target = getDisplay(display);
+  if (!state[target.readyKey]) return;
+
+  if (display === "stage") {
+    const stageWindow = state[target.windowKey];
+    if (stageWindow && !stageWindow.closed) {
+      stageWindow.postMessage({ ...payload, file }, window.location.origin);
+    }
+    return;
+  }
+
+  const connection = state[target.connectionKey];
+  if (connection && connection.state === "connected") {
+    connection.send(JSON.stringify(payload));
+    connection.send(file);
+    return;
+  }
+
+  if (display === "presenter" && els.targetFrame.contentWindow) {
+    els.targetFrame.contentWindow.postMessage({ ...payload, file }, window.location.origin);
   }
 }
 
@@ -395,6 +439,13 @@ function setStageBlanked(blanked) {
 
 function closeDisplayWindow(display) {
   postToDisplay(display, { type: "target:close" }, { force: true });
+  if (display === "stage") {
+    try {
+      state.stageWindow?.close();
+    } catch {
+      // Popup may already be gone.
+    }
+  }
 }
 
 function closeTargetWindow() {
@@ -590,7 +641,34 @@ async function launchTarget() {
 }
 
 async function launchStage() {
-  return launchDisplay("stage");
+  const target = getDisplay("stage");
+
+  try {
+    if (state.stageWindow && !state.stageWindow.closed) {
+      state.stageWindow.focus();
+      if (state.stageReady) syncActiveViewToDisplay("stage");
+      return;
+    }
+
+    state.stageReady = false;
+    target.renderButtons();
+    target.setStatus("Opening stage popup...");
+
+    const targetUrl = new URL(target.url, window.location.href);
+    const popup = window.open(targetUrl.href, "teleprompter-stage", "popup=yes,width=1280,height=720");
+    if (!popup) throw new Error("Popup was blocked. Allow popups for this site and try again.");
+
+    state.stageWindow = popup;
+    state.stageBlanked = false;
+    target.renderBlank();
+    target.setStatus("Stage popup opened. Use Full Screen in the Stage window.");
+    popup.focus();
+  } catch (error) {
+    state.stageReady = false;
+    state.stageWindow = null;
+    target.renderButtons();
+    target.setStatus(`Stage launch failed: ${error.message}`);
+  }
 }
 
 async function launchDisplay(display) {
@@ -630,6 +708,7 @@ function attachPresentationConnection(connection) {
 function attachDisplayConnection(display, connection) {
   const target = getDisplay(display);
   state[target.connectionKey] = connection;
+  if ("binaryType" in connection) connection.binaryType = "blob";
 
   connection.addEventListener("connect", () => {
     state[target.readyKey] = true;
@@ -691,9 +770,13 @@ function closeDisplay(display) {
 
   state[target.readyKey] = false;
   state[target.blankedKey] = false;
-  state[target.connectionKey] = null;
-  state[target.requestKey] = null;
-  if (display === "presenter") els.targetFrame.removeAttribute("src");
+  if (display === "stage") {
+    state.stageWindow = null;
+  } else {
+    state[target.connectionKey] = null;
+    state[target.requestKey] = null;
+    els.targetFrame.removeAttribute("src");
+  }
   target.renderButtons();
   target.renderBlank();
   target.setStatus(`${target.label} display closed.`);
@@ -705,6 +788,7 @@ function terminatePresentationConnection() {
 
 function terminateDisplayConnection(display) {
   const target = getDisplay(display);
+  if (!target.connectionKey) return;
   try {
     const connection = state[target.connectionKey];
     if (connection && connection.state !== "terminated") {
@@ -719,7 +803,42 @@ function closePresentationDisplayBeforeUnload() {
   closeDisplayWindow("presenter");
   closeDisplayWindow("stage");
   terminateDisplayConnection("presenter");
-  terminateDisplayConnection("stage");
+}
+
+function markStageReady(source) {
+  if (source && state.stageWindow && source !== state.stageWindow) return;
+  const target = getDisplay("stage");
+  state.stageReady = true;
+  state.stageBlanked = false;
+  target.renderButtons();
+  target.renderBlank();
+  target.setStatus("Stage popup connected.");
+  syncTimerToDisplays();
+  syncActiveViewToDisplay("stage");
+}
+
+function markStageClosed(source) {
+  if (source && state.stageWindow && source !== state.stageWindow) return;
+  const target = getDisplay("stage");
+  state.stageReady = false;
+  state.stageBlanked = false;
+  state.stageWindow = null;
+  target.renderButtons();
+  target.renderBlank();
+  target.setStatus("Stage popup closed.");
+}
+
+function handleWindowMessage(event) {
+  if (event.origin !== window.location.origin) return;
+  const message = event.data || {};
+  if (message.type === "stage:ready") {
+    markStageReady(event.source);
+    return;
+  }
+
+  if (message.type === "stage:closed") {
+    markStageClosed(event.source);
+  }
 }
 
 function syncActiveViewToTarget() {
@@ -839,6 +958,7 @@ function getTimerPayload() {
     elapsedMs: state.timer.elapsedMs,
     durationMs: state.timer.durationMs,
     startedAt: state.timer.startedAt,
+    stageTimers: state.stageTimers,
     sentAt: Date.now()
   };
 }
@@ -854,6 +974,9 @@ function renderTimerControls() {
   els.timerStartButton.setAttribute("aria-pressed", String(state.timer.running));
   els.timerPauseButton.classList.toggle("active", !state.timer.running);
   els.timerPauseButton.setAttribute("aria-pressed", String(!state.timer.running));
+  els.stageSlideTimerVisible.checked = state.stageTimers.slide;
+  els.stagePromptTimerVisible.checked = state.stageTimers.prompt;
+  els.stageVideoTimerVisible.checked = state.stageTimers.video;
 }
 
 function syncTimerToDisplays() {
@@ -1062,6 +1185,7 @@ function syncPromptToDisplay(display) {
     anchorIndex: anchor.index,
     anchorProgress: anchor.progress,
     activeIndex: state.activeBlock,
+    fontSize: state.promptFontSize,
     zoom: state.promptZoom,
     ...progressState
   });
@@ -1082,6 +1206,7 @@ function syncPromptPositionToDisplay(display) {
     anchorIndex: anchor.index,
     anchorProgress: anchor.progress,
     activeIndex: state.activeBlock,
+    fontSize: state.promptFontSize,
     zoom: state.promptZoom,
     ...progressState
   });
@@ -1383,12 +1508,32 @@ function getEmbeddedVideoPayload() {
   };
 }
 
-function syncEmbeddedVideoToDisplay(display) {
+async function getSelectedEmbeddedVideoFile() {
+  if (!window.videoStore) throw new Error("Video store is unavailable.");
+  if (!state.embeddedVideo.selectedId) return null;
+  return window.videoStore.getVideoFile(state.embeddedVideo.selectedId);
+}
+
+async function syncEmbeddedVideoToDisplay(display) {
   if (!state.embeddedVideo.selectedId) {
     postToDisplay(display, { type: "target:video-unload" });
     return;
   }
-  postToDisplay(display, getEmbeddedVideoPayload());
+  try {
+    const file = await getSelectedEmbeddedVideoFile();
+    if (!file) {
+      postToDisplay(display, { type: "target:video-unload" });
+      return;
+    }
+    postVideoLoadToDisplay(display, {
+      ...getEmbeddedVideoPayload(),
+      fileName: file.name,
+      fileType: file.type,
+      fileSize: file.size
+    }, file);
+  } catch (error) {
+    setVlcStatus(`Embedded video sync failed: ${error.message}`);
+  }
 }
 
 function syncEmbeddedVideoToDisplays() {
@@ -1597,6 +1742,27 @@ function bindEvents() {
     savePreferences();
   });
 
+  els.stageSlideTimerVisible.addEventListener("change", () => {
+    state.stageTimers.slide = els.stageSlideTimerVisible.checked;
+    renderTimerControls();
+    syncTimerToDisplays();
+    savePreferences();
+  });
+
+  els.stagePromptTimerVisible.addEventListener("change", () => {
+    state.stageTimers.prompt = els.stagePromptTimerVisible.checked;
+    renderTimerControls();
+    syncTimerToDisplays();
+    savePreferences();
+  });
+
+  els.stageVideoTimerVisible.addEventListener("change", () => {
+    state.stageTimers.video = els.stageVideoTimerVisible.checked;
+    renderTimerControls();
+    syncTimerToDisplays();
+    savePreferences();
+  });
+
   els.tabs.forEach((tab) => {
     tab.addEventListener("click", () => setActiveView(tab.dataset.view));
   });
@@ -1697,6 +1863,7 @@ function bindEvents() {
     state.vlc.docked = els.vlcDocked.checked;
     savePreferences();
   });
+  window.addEventListener("message", handleWindowMessage);
 }
 
 function init() {

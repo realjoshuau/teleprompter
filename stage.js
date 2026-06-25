@@ -15,6 +15,7 @@ const progressPercent = document.querySelector("#stageProgressPercent");
 const videoPlayer = document.querySelector("#stageVideoPlayer");
 const videoStatus = document.querySelector("#stageVideoStatus");
 const videoRemaining = document.querySelector("#stageVideoRemaining");
+const fullscreenButton = document.querySelector("#stageFullscreenButton");
 const clockEls = [
   document.querySelector("#stageClock"),
   document.querySelector("#stagePromptClock"),
@@ -25,6 +26,11 @@ const timerEls = [
   document.querySelector("#stagePromptTimer"),
   document.querySelector("#stageVideoTimer")
 ];
+const timerBlocks = {
+  slide: document.querySelector("#stageTimerBlock"),
+  prompt: document.querySelector("#stagePromptTimerBlock"),
+  video: document.querySelector("#stageVideoTimerBlock")
+};
 
 let receiverConnection = null;
 let currentMode = "blank";
@@ -35,8 +41,14 @@ let timerState = {
   elapsedMs: 0,
   durationMs: 300000,
   startedAt: 0,
+  stageTimers: {
+    slide: true,
+    prompt: true,
+    video: true
+  },
   sentAt: Date.now()
 };
+let pendingVideoData = null;
 
 function setMode(mode) {
   currentMode = mode;
@@ -88,7 +100,15 @@ function updateClockAndTimer() {
   timerEls.forEach((element) => {
     element.textContent = timer;
   });
+  updateTimerVisibility();
   updateVideoRemaining();
+}
+
+function updateTimerVisibility() {
+  const visibility = timerState.stageTimers || {};
+  timerBlocks.slide.hidden = visibility.slide === false;
+  timerBlocks.prompt.hidden = visibility.prompt === false;
+  timerBlocks.video.hidden = visibility.video === false;
 }
 
 function renderPromptBlocks(blocks, activeIndex = 0) {
@@ -108,6 +128,10 @@ function renderPromptBlocks(blocks, activeIndex = 0) {
 }
 
 function applyPromptSizing(data = {}) {
+  if (Number.isFinite(data.fontSize)) {
+    promptScroll.style.setProperty("--target-prompt-font-size", `${data.fontSize}px`);
+  }
+
   if (Number.isFinite(data.zoom)) {
     promptScroll.style.setProperty("--target-prompt-zoom", String(data.zoom / 100));
   }
@@ -195,6 +219,7 @@ function showPrompt(data = {}) {
 }
 
 function unloadVideo() {
+  pendingVideoData = null;
   videoPlayer.pause();
   videoPlayer.removeAttribute("src");
   videoPlayer.load();
@@ -205,13 +230,12 @@ function unloadVideo() {
   updateVideoRemaining();
 }
 
-async function loadVideo(data = {}) {
+async function loadVideo(data = {}, file = data.file) {
   unloadVideo();
   setMode("video");
 
   try {
-    if (!window.videoStore) throw new Error("Video store is unavailable.");
-    const file = await window.videoStore.getVideoFile(data.id);
+    if (!(file instanceof Blob)) throw new Error("Video file was not received from the controller.");
     videoUrl = URL.createObjectURL(file);
     videoPlayer.src = videoUrl;
     videoPlayer.currentTime = Number.isFinite(data.currentTime) ? data.currentTime : 0;
@@ -252,6 +276,7 @@ function blank() {
 }
 
 function closeStageWindow() {
+  notifyController("stage:closed");
   blank();
   const connection = receiverConnection;
   receiverConnection = null;
@@ -265,7 +290,38 @@ function closeStageWindow() {
   window.close();
 }
 
+function notifyController(type) {
+  try {
+    window.opener?.postMessage({ type }, window.location.origin);
+  } catch {
+    // The controller may have closed first.
+  }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen();
+    }
+  } catch {
+    // Browsers require a direct button gesture; leave the window usable if fullscreen fails.
+  }
+}
+
+function renderFullscreenButton() {
+  fullscreenButton.textContent = document.fullscreenElement ? "Exit Full Screen" : "Full Screen";
+  document.body.classList.toggle("stage-fullscreen-active", Boolean(document.fullscreenElement));
+}
+
 function handleControllerMessage(message) {
+  if (message instanceof Blob || message instanceof ArrayBuffer) {
+    const file = message instanceof Blob ? message : new Blob([message], { type: pendingVideoData?.fileType || "" });
+    loadVideo(pendingVideoData || {}, file);
+    return;
+  }
+
   if (message.type === "target:blank") {
     blank();
     return;
@@ -298,7 +354,16 @@ function handleControllerMessage(message) {
   }
 
   if (message.type === "target:video-load") {
-    loadVideo(message);
+    if (message.file instanceof Blob) {
+      loadVideo(message, message.file);
+    } else {
+      pendingVideoData = message;
+      unloadVideo();
+      setMode("video");
+      pendingVideoData = message;
+      videoStatus.hidden = false;
+      videoStatus.textContent = "Loading embedded video from controller...";
+    }
     return;
   }
 
@@ -323,6 +388,7 @@ function parseConnectionMessage(data) {
 
 function attachPresentationConnection(connection) {
   receiverConnection = connection;
+  if ("binaryType" in connection) connection.binaryType = "blob";
   connection.addEventListener("message", (event) => {
     handleControllerMessage(parseConnectionMessage(event.data));
   });
@@ -344,6 +410,9 @@ window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin) return;
   handleControllerMessage(event.data || {});
 });
+window.addEventListener("beforeunload", () => notifyController("stage:closed"));
+document.addEventListener("fullscreenchange", renderFullscreenButton);
+fullscreenButton.addEventListener("click", toggleFullscreen);
 
 videoPlayer.addEventListener("timeupdate", updateVideoRemaining);
 videoPlayer.addEventListener("durationchange", updateVideoRemaining);
@@ -351,4 +420,6 @@ window.setInterval(updateClockAndTimer, 1000);
 
 setMode("blank");
 updateClockAndTimer();
+renderFullscreenButton();
+notifyController("stage:ready");
 connectPresentationReceiver().catch(() => setMode("blank"));
