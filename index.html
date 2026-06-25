@@ -73,6 +73,18 @@
           <button id="timerPauseButton" class="secondary" type="button" aria-pressed="true">Pause</button>
           <button id="timerResetButton" class="secondary" type="button">Reset</button>
         </div>
+        <label class="stage-layout-field" for="stagePresentationLayout">
+          Stage presentation
+          <select id="stagePresentationLayout">
+            <option value="slide-focus">Slide focus</option>
+            <option value="script-focus">Script focus</option>
+          </select>
+        </label>
+        <label class="stage-script-zoom-field" for="stageScriptZoom">
+          Script zoom
+          <span id="stageScriptZoomValue">100%</span>
+          <input id="stageScriptZoom" type="range" min="45" max="140" step="5">
+        </label>
         <div class="stage-timer-toggles" aria-label="Stage timer visibility">
           <span>Stage timer</span>
           <label class="toggle-row">

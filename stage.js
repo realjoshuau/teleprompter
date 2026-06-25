@@ -8,6 +8,7 @@ const nextImage = document.querySelector("#stageNextImage");
 const nextLabel = document.querySelector("#stageNextLabel");
 const slideCount = document.querySelector("#stageSlideCount");
 const slideNote = document.querySelector("#stageSlideNote");
+const notesLabel = document.querySelector("#stageNotesLabel");
 const promptScroll = document.querySelector("#stagePromptScroll");
 const progressOverlay = document.querySelector("#stageProgress");
 const progressFill = document.querySelector("#stageProgressFill");
@@ -190,6 +191,12 @@ function updateProgressOverlay(data = {}) {
 }
 
 function showSlide(data = {}) {
+  const layout = data.stagePresentationLayout === "script-focus" ? "script-focus" : "slide-focus";
+  const scriptZoom = Number.isFinite(data.stageScriptZoom) ? Math.max(45, Math.min(140, data.stageScriptZoom)) : 100;
+  slideView.classList.toggle("script-focus", layout === "script-focus");
+  slideView.classList.toggle("slide-focus", layout !== "script-focus");
+  slideView.style.setProperty("--stage-script-zoom", String(scriptZoom / 100));
+  notesLabel.textContent = layout === "script-focus" ? "Script" : "Notes";
   slideImage.src = data.src || "";
   slideImage.alt = data.alt || "Current slide";
   slideCount.textContent = Number.isFinite(data.currentIndex) && Number.isFinite(data.totalSlides)

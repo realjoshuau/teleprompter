@@ -27,6 +27,9 @@ const els = {
   timerStartButton: document.querySelector("#timerStartButton"),
   timerPauseButton: document.querySelector("#timerPauseButton"),
   timerResetButton: document.querySelector("#timerResetButton"),
+  stagePresentationLayout: document.querySelector("#stagePresentationLayout"),
+  stageScriptZoom: document.querySelector("#stageScriptZoom"),
+  stageScriptZoomValue: document.querySelector("#stageScriptZoomValue"),
   stageSlideTimerVisible: document.querySelector("#stageSlideTimerVisible"),
   stagePromptTimerVisible: document.querySelector("#stagePromptTimerVisible"),
   stageVideoTimerVisible: document.querySelector("#stageVideoTimerVisible"),
@@ -121,6 +124,8 @@ const state = {
     prompt: true,
     video: true
   },
+  stagePresentationLayout: "slide-focus",
+  stageScriptZoom: 100,
   about: {
     mode: "development",
     commitHash: null
@@ -179,6 +184,8 @@ function loadPreferences() {
       prompt: typeof saved.stageTimers?.prompt === "boolean" ? saved.stageTimers.prompt : state.stageTimers.prompt,
       video: typeof saved.stageTimers?.video === "boolean" ? saved.stageTimers.video : state.stageTimers.video
     };
+    state.stagePresentationLayout = saved.stagePresentationLayout === "script-focus" ? "script-focus" : "slide-focus";
+    state.stageScriptZoom = Number.isFinite(saved.stageScriptZoom) ? Math.max(45, Math.min(140, saved.stageScriptZoom)) : state.stageScriptZoom;
     state.vlc = { ...state.vlc, ...(saved.vlc || {}) };
   } catch {
     localStorage.removeItem(storageKey);
@@ -205,6 +212,8 @@ function savePreferences() {
       elapsedMs: getTimerElapsedMs()
     },
     stageTimers: state.stageTimers,
+    stagePresentationLayout: state.stagePresentationLayout,
+    stageScriptZoom: state.stageScriptZoom,
     vlc: {
       host: state.vlc.host,
       port: state.vlc.port,
@@ -974,6 +983,9 @@ function renderTimerControls() {
   els.timerStartButton.setAttribute("aria-pressed", String(state.timer.running));
   els.timerPauseButton.classList.toggle("active", !state.timer.running);
   els.timerPauseButton.setAttribute("aria-pressed", String(!state.timer.running));
+  els.stagePresentationLayout.value = state.stagePresentationLayout;
+  els.stageScriptZoom.value = String(state.stageScriptZoom);
+  els.stageScriptZoomValue.textContent = `${state.stageScriptZoom}%`;
   els.stageSlideTimerVisible.checked = state.stageTimers.slide;
   els.stagePromptTimerVisible.checked = state.stageTimers.prompt;
   els.stageVideoTimerVisible.checked = state.stageTimers.video;
@@ -1125,6 +1137,8 @@ function syncSlideToDisplay(display) {
     currentIndex: state.selectedSlide,
     totalSlides: state.slides.length,
     note: slide.error || slide.note || "No note for this slide.",
+    stagePresentationLayout: display === "stage" ? state.stagePresentationLayout : "slide-focus",
+    stageScriptZoom: display === "stage" ? state.stageScriptZoom : 100,
     nextSrc: nextSlide?.url || "",
     nextAlt: nextSlide?.name || (nextSlide ? `Slide ${state.selectedSlide + 2}` : ""),
     nextNote: nextSlide?.note || nextSlide?.error || ""
@@ -1739,6 +1753,26 @@ function bindEvents() {
     if (state.timer.mode === "countdown") resetTimer();
     renderTimerControls();
     syncTimerToDisplays();
+    savePreferences();
+  });
+
+  els.stagePresentationLayout.addEventListener("change", () => {
+    state.stagePresentationLayout = els.stagePresentationLayout.value === "script-focus" ? "script-focus" : "slide-focus";
+    renderTimerControls();
+    state.stageBlanked = false;
+    renderStageBlankButton();
+    syncSlideToDisplay("stage");
+    savePreferences();
+  });
+
+  els.stageScriptZoom.addEventListener("input", () => {
+    state.stageScriptZoom = Number(els.stageScriptZoom.value) || 100;
+    els.stageScriptZoomValue.textContent = `${state.stageScriptZoom}%`;
+    if (state.stagePresentationLayout === "script-focus") {
+      state.stageBlanked = false;
+      renderStageBlankButton();
+      syncSlideToDisplay("stage");
+    }
     savePreferences();
   });
 
