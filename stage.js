@@ -1,45 +1,100 @@
-const stage = document.querySelector("#targetStage");
-const blankView = document.querySelector("#targetBlank");
-const slideView = document.querySelector("#targetSlide");
-const promptView = document.querySelector("#targetPrompt");
-const videoView = document.querySelector("#targetVideo");
-const slideImage = document.querySelector("#targetSlideImage");
-const promptScroll = document.querySelector("#targetPromptScroll");
-const progressOverlay = document.querySelector("#targetProgress");
-const progressFill = document.querySelector("#targetProgressFill");
-const progressPercent = document.querySelector("#targetProgressPercent");
-const videoPlayer = document.querySelector("#targetVideoPlayer");
-const videoStatus = document.querySelector("#targetVideoStatus");
+const stageRoot = document.querySelector("#stageRoot");
+const blankView = document.querySelector("#stageBlank");
+const slideView = document.querySelector("#stageSlide");
+const promptView = document.querySelector("#stagePrompt");
+const videoView = document.querySelector("#stageVideo");
+const slideImage = document.querySelector("#stageSlideImage");
+const nextImage = document.querySelector("#stageNextImage");
+const nextLabel = document.querySelector("#stageNextLabel");
+const slideCount = document.querySelector("#stageSlideCount");
+const slideNote = document.querySelector("#stageSlideNote");
+const promptScroll = document.querySelector("#stagePromptScroll");
+const videoPlayer = document.querySelector("#stageVideoPlayer");
+const videoStatus = document.querySelector("#stageVideoStatus");
+const videoRemaining = document.querySelector("#stageVideoRemaining");
+const clockEls = [
+  document.querySelector("#stageClock"),
+  document.querySelector("#stagePromptClock"),
+  document.querySelector("#stageVideoClock")
+];
+const timerEls = [
+  document.querySelector("#stageTimer"),
+  document.querySelector("#stagePromptTimer"),
+  document.querySelector("#stageVideoTimer")
+];
 
-let promptBlocks = [];
 let receiverConnection = null;
 let currentMode = "blank";
 let videoUrl = "";
+let timerState = {
+  mode: "stopwatch",
+  running: false,
+  elapsedMs: 0,
+  durationMs: 300000,
+  startedAt: 0,
+  sentAt: Date.now()
+};
 
 function setMode(mode) {
   currentMode = mode;
-  stage.className = `target-stage ${mode}`;
+  stageRoot.className = `stage-view ${mode}`;
   blankView.hidden = mode !== "blank";
   slideView.hidden = mode !== "slide";
   promptView.hidden = mode !== "teleprompter";
   videoView.hidden = mode !== "video";
-  if (mode !== "teleprompter") {
-    updateProgressOverlay({ progressEnabled: false });
+}
+
+function formatClock(date = new Date()) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "--:--";
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function getTimerElapsedMs() {
+  const base = Number.isFinite(timerState.elapsedMs) ? timerState.elapsedMs : 0;
+  if (!timerState.running || !Number.isFinite(timerState.startedAt)) return base;
+  return base + Math.max(0, Date.now() - timerState.startedAt);
+}
+
+function getTimerDisplaySeconds() {
+  const elapsed = getTimerElapsedMs();
+  if (timerState.mode === "countdown") {
+    const duration = Number.isFinite(timerState.durationMs) ? timerState.durationMs : 0;
+    return Math.max(0, (duration - elapsed) / 1000);
   }
+  return elapsed / 1000;
+}
+
+function updateClockAndTimer() {
+  const clock = formatClock();
+  const timer = formatDuration(getTimerDisplaySeconds());
+  clockEls.forEach((element) => {
+    element.textContent = clock;
+  });
+  timerEls.forEach((element) => {
+    element.textContent = timer;
+  });
+  updateVideoRemaining();
 }
 
 function renderPromptBlocks(blocks, activeIndex = 0) {
-  promptBlocks = Array.isArray(blocks) ? blocks : [];
   promptScroll.textContent = "";
-
   const content = document.createElement("div");
   content.className = "target-prompt-content";
 
-  promptBlocks.forEach((block, index) => {
+  (Array.isArray(blocks) ? blocks : []).forEach((block, index) => {
     const item = document.createElement("section");
     item.className = "target-prompt-block";
     item.innerHTML = block.html || "";
-    if (index === activeIndex) item.classList.add("active");
+    item.classList.toggle("active", index === activeIndex);
     content.append(item);
   });
 
@@ -60,10 +115,7 @@ function resolvePromptScrollTop(data = {}) {
   const blocks = Array.from(promptScroll.querySelectorAll(".target-prompt-block"));
   const anchorIndex = Math.max(0, Math.min(blocks.length - 1, data.anchorIndex));
   const anchorBlock = blocks[anchorIndex];
-
-  if (!anchorBlock) {
-    return Number.isFinite(data.scrollTop) ? data.scrollTop : 0;
-  }
+  if (!anchorBlock) return Number.isFinite(data.scrollTop) ? data.scrollTop : 0;
 
   const scrollRect = promptScroll.getBoundingClientRect();
   const blockRect = anchorBlock.getBoundingClientRect();
@@ -72,7 +124,6 @@ function resolvePromptScrollTop(data = {}) {
   const progress = Math.max(0, Math.min(1, data.anchorProgress));
   const marker = scrollRect.top + promptScroll.clientHeight * 0.36;
   const targetAnchor = blockRect.top + (nextTop - blockRect.top) * progress;
-
   return promptScroll.scrollTop + targetAnchor - marker;
 }
 
@@ -82,39 +133,31 @@ function updatePromptPosition(scrollTop, activeIndex, data = {}) {
   promptScroll.querySelectorAll(".target-prompt-block").forEach((block, index) => {
     block.classList.toggle("active", index === activeIndex);
   });
-  if (currentMode === "teleprompter") {
-    updateProgressOverlay(data);
-  }
 }
 
-function updateProgressOverlay(data = {}) {
-  const enabled = Boolean(data.progressEnabled);
-  progressOverlay.hidden = !enabled;
+function showSlide(data = {}) {
+  slideImage.src = data.src || "";
+  slideImage.alt = data.alt || "Current slide";
+  slideCount.textContent = Number.isFinite(data.currentIndex) && Number.isFinite(data.totalSlides)
+    ? `Slide ${data.currentIndex + 1} of ${data.totalSlides}`
+    : "Slide";
+  slideNote.textContent = data.note || "No notes.";
 
-  if (!enabled) {
-    progressFill.style.width = "0%";
-    progressPercent.hidden = true;
-    progressPercent.textContent = "";
-    return;
+  if (data.nextSrc) {
+    nextImage.hidden = false;
+    nextImage.src = data.nextSrc;
+    nextImage.alt = data.nextAlt || "Next slide";
+    nextLabel.textContent = data.nextNote || "Next slide";
+  } else {
+    nextImage.hidden = true;
+    nextImage.removeAttribute("src");
+    nextLabel.textContent = "No next slide";
   }
 
-  const value = Number.isFinite(data.progressValue) ? Math.max(0, Math.min(1, data.progressValue)) : 0;
-  const percent = Math.round(value * 100);
-
-  progressOverlay.classList.toggle("target-progress-top", data.progressPosition === "top");
-  progressOverlay.classList.toggle("target-progress-bottom", data.progressPosition !== "top");
-  progressFill.style.width = `${value * 100}%`;
-  progressPercent.hidden = !data.progressPercentEnabled;
-  progressPercent.textContent = data.progressPercentEnabled ? `${percent}%` : "";
-}
-
-function showSlide(src, alt) {
-  slideImage.src = src || "";
-  slideImage.alt = alt || "Current slide";
   setMode("slide");
 }
 
-function showPrompt(data) {
+function showPrompt(data = {}) {
   applyPromptSizing(data);
   renderPromptBlocks(data.blocks, data.activeIndex);
   setMode("teleprompter");
@@ -129,6 +172,7 @@ function unloadVideo() {
   videoUrl = "";
   videoStatus.hidden = false;
   videoStatus.textContent = "No embedded video loaded.";
+  updateVideoRemaining();
 }
 
 async function loadVideo(data = {}) {
@@ -163,6 +207,12 @@ function controlVideo(data = {}) {
   } else if (data.action === "skip" && Number.isFinite(data.delta)) {
     videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime + data.delta);
   }
+  updateVideoRemaining();
+}
+
+function updateVideoRemaining() {
+  const remaining = videoPlayer.duration - videoPlayer.currentTime;
+  videoRemaining.textContent = formatDuration(remaining);
 }
 
 function blank() {
@@ -171,16 +221,15 @@ function blank() {
   setMode("blank");
 }
 
-function closePresentationWindow() {
+function closeStageWindow() {
   blank();
-
   const connection = receiverConnection;
   receiverConnection = null;
 
   try {
     connection?.close();
   } catch {
-    // The controller may terminate the connection first.
+    // The controller may already be terminating the connection.
   }
 
   window.close();
@@ -193,12 +242,18 @@ function handleControllerMessage(message) {
   }
 
   if (message.type === "target:close") {
-    closePresentationWindow();
+    closeStageWindow();
+    return;
+  }
+
+  if (message.type === "target:timer-state") {
+    timerState = { ...timerState, ...message };
+    updateClockAndTimer();
     return;
   }
 
   if (message.type === "target:slide") {
-    showSlide(message.src, message.alt);
+    showSlide(message);
     return;
   }
 
@@ -208,7 +263,7 @@ function handleControllerMessage(message) {
   }
 
   if (message.type === "target:prompt-position") {
-    updatePromptPosition(message.scrollTop, message.activeIndex, message);
+    if (currentMode === "teleprompter") updatePromptPosition(message.scrollTop, message.activeIndex, message);
     return;
   }
 
@@ -241,8 +296,8 @@ function attachPresentationConnection(connection) {
   connection.addEventListener("message", (event) => {
     handleControllerMessage(parseConnectionMessage(event.data));
   });
-  connection.addEventListener("close", closePresentationWindow);
-  connection.addEventListener("terminate", closePresentationWindow);
+  connection.addEventListener("close", closeStageWindow);
+  connection.addEventListener("terminate", closeStageWindow);
 }
 
 async function connectPresentationReceiver() {
@@ -260,5 +315,10 @@ window.addEventListener("message", (event) => {
   handleControllerMessage(event.data || {});
 });
 
+videoPlayer.addEventListener("timeupdate", updateVideoRemaining);
+videoPlayer.addEventListener("durationchange", updateVideoRemaining);
+window.setInterval(updateClockAndTimer, 1000);
+
 setMode("blank");
+updateClockAndTimer();
 connectPresentationReceiver().catch(() => setMode("blank"));

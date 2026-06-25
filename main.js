@@ -2,6 +2,7 @@ const storageKey = "teleprompter-controller-state-v1";
 const unsupportedOverrideKey = "teleprompter-unsupported-override";
 const unsupportedOverrideParam = "override_unsupported_flag";
 const supportedSlideTypes = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
+const videoSyncIntervalMs = 1000;
 
 const els = {
   createProjectButton: document.querySelector("#createProjectButton"),
@@ -9,13 +10,23 @@ const els = {
   launchButton: document.querySelector("#launchButton"),
   blankPresentationButton: document.querySelector("#blankPresentationButton"),
   closePresentationButton: document.querySelector("#closePresentationButton"),
+  launchStageButton: document.querySelector("#launchStageButton"),
+  blankStageButton: document.querySelector("#blankStageButton"),
+  closeStageButton: document.querySelector("#closeStageButton"),
   aboutButton: document.querySelector("#aboutButton"),
   aboutPanel: document.querySelector("#aboutPanel"),
   aboutMode: document.querySelector("#aboutMode"),
   aboutCommit: document.querySelector("#aboutCommit"),
   projectStatus: document.querySelector("#projectStatus"),
   screenStatus: document.querySelector("#screenStatus"),
+  stageStatus: document.querySelector("#stageStatus"),
   vlcStatus: document.querySelector("#vlcStatus"),
+  timerMode: document.querySelector("#timerMode"),
+  timerDuration: document.querySelector("#timerDuration"),
+  timerDisplay: document.querySelector("#timerDisplay"),
+  timerStartButton: document.querySelector("#timerStartButton"),
+  timerPauseButton: document.querySelector("#timerPauseButton"),
+  timerResetButton: document.querySelector("#timerResetButton"),
   tabs: Array.from(document.querySelectorAll(".tab")),
   panels: Array.from(document.querySelectorAll(".view-panel")),
   targetFrame: document.querySelector("#targetFrame"),
@@ -52,7 +63,24 @@ const els = {
   vlcStopButton: document.querySelector("#vlcStopButton"),
   vlcDocked: document.querySelector("#vlcDocked"),
   vlcNowPlaying: document.querySelector("#vlcNowPlaying"),
-  playlistList: document.querySelector("#playlistList")
+  playlistList: document.querySelector("#playlistList"),
+  vlcConfig: document.querySelector("#vlcPanel .config-grid"),
+  vlcRemotePad: document.querySelector("#vlcPanel > .workspace-grid .tool-panel > .remote-pad"),
+  vlcAdvanced: document.querySelector("#vlcPanel .advanced"),
+  videoStackVlc: document.querySelector("#videoStackVlc"),
+  videoStackEmbedded: document.querySelector("#videoStackEmbedded"),
+  embeddedVideoPanel: document.querySelector("#embeddedVideoPanel"),
+  chooseVideoFolderButton: document.querySelector("#chooseVideoFolderButton"),
+  embeddedVideoTitle: document.querySelector("#embeddedVideoTitle"),
+  embeddedVideoPlayer: document.querySelector("#embeddedVideoPlayer"),
+  embeddedVideoSeek: document.querySelector("#embeddedVideoSeek"),
+  embeddedVideoElapsed: document.querySelector("#embeddedVideoElapsed"),
+  embeddedVideoDuration: document.querySelector("#embeddedVideoDuration"),
+  embeddedBackButton: document.querySelector("#embeddedBackButton"),
+  embeddedPlayPauseButton: document.querySelector("#embeddedPlayPauseButton"),
+  embeddedForwardButton: document.querySelector("#embeddedForwardButton"),
+  embeddedStopButton: document.querySelector("#embeddedStopButton"),
+  embeddedVideoList: document.querySelector("#embeddedVideoList")
 };
 
 const state = {
@@ -75,9 +103,31 @@ const state = {
   presentationBlanked: false,
   presentationRequest: null,
   presentationConnection: null,
+  stageReady: false,
+  stageBlanked: false,
+  stageRequest: null,
+  stageConnection: null,
+  timer: {
+    mode: "stopwatch",
+    durationMs: 300000,
+    elapsedMs: 0,
+    running: false,
+    startedAt: 0
+  },
   about: {
     mode: "development",
     commitHash: null
+  },
+  videoStack: "vlc",
+  embeddedVideo: {
+    files: [],
+    selectedId: "",
+    selectedName: "",
+    objectUrl: "",
+    playing: false,
+    seeking: false,
+    duration: 0,
+    currentTime: 0
   },
   vlc: {
     host: "127.0.0.1",
@@ -92,6 +142,8 @@ const state = {
 let promptAnimation = 0;
 let lastPromptTick = 0;
 let vlcPollTimer = 0;
+let timerRenderTimer = 0;
+let videoSyncTimer = 0;
 
 function loadPreferences() {
   try {
@@ -104,6 +156,17 @@ function loadPreferences() {
     state.progressBarEnabled = typeof saved.progressBarEnabled === "boolean" ? saved.progressBarEnabled : state.progressBarEnabled;
     state.progressBarPosition = saved.progressBarPosition === "top" ? "top" : "bottom";
     state.progressPercentEnabled = typeof saved.progressPercentEnabled === "boolean" ? saved.progressPercentEnabled : state.progressPercentEnabled;
+    state.videoStack = saved.videoStack === "embedded" ? "embedded" : "vlc";
+    state.embeddedVideo.selectedId = typeof saved.embeddedVideo?.selectedId === "string" ? saved.embeddedVideo.selectedId : "";
+    state.timer = {
+      ...state.timer,
+      ...(saved.timer || {}),
+      running: false,
+      startedAt: 0
+    };
+    state.timer.mode = state.timer.mode === "countdown" ? "countdown" : "stopwatch";
+    state.timer.durationMs = Number.isFinite(state.timer.durationMs) ? state.timer.durationMs : 300000;
+    state.timer.elapsedMs = Number.isFinite(state.timer.elapsedMs) ? state.timer.elapsedMs : 0;
     state.vlc = { ...state.vlc, ...(saved.vlc || {}) };
   } catch {
     localStorage.removeItem(storageKey);
@@ -120,6 +183,15 @@ function savePreferences() {
     progressBarEnabled: state.progressBarEnabled,
     progressBarPosition: state.progressBarPosition,
     progressPercentEnabled: state.progressPercentEnabled,
+    videoStack: state.videoStack,
+    embeddedVideo: {
+      selectedId: state.embeddedVideo.selectedId
+    },
+    timer: {
+      mode: state.timer.mode,
+      durationMs: state.timer.durationMs,
+      elapsedMs: getTimerElapsedMs()
+    },
     vlc: {
       host: state.vlc.host,
       port: state.vlc.port,
@@ -191,6 +263,10 @@ function setScreenStatus(message) {
   els.screenStatus.textContent = message;
 }
 
+function setStageStatus(message) {
+  els.stageStatus.textContent = message;
+}
+
 function setVlcStatus(message) {
   els.vlcStatus.textContent = message;
 }
@@ -242,37 +318,87 @@ async function loadAboutInfo() {
   }
 }
 
-function postToTarget(message, options = {}) {
-  if (!state.targetReady && !options.force) return;
+function getDisplay(display) {
+  return display === "stage"
+    ? {
+      readyKey: "stageReady",
+      blankedKey: "stageBlanked",
+      requestKey: "stageRequest",
+      connectionKey: "stageConnection",
+      url: "stage.html",
+      label: "Stage",
+      setStatus: setStageStatus,
+      renderButtons: renderStageButtons,
+      renderBlank: renderStageBlankButton
+    }
+    : {
+      readyKey: "targetReady",
+      blankedKey: "presentationBlanked",
+      requestKey: "presentationRequest",
+      connectionKey: "presentationConnection",
+      url: "target.html",
+      label: "Presentation",
+      setStatus: setScreenStatus,
+      renderButtons: renderPresentationButtons,
+      renderBlank: renderBlankButton
+    };
+}
 
-  if (state.presentationConnection && state.presentationConnection.state === "connected") {
-    state.presentationConnection.send(JSON.stringify(message));
+function postToDisplay(display, message, options = {}) {
+  const target = getDisplay(display);
+  if (!state[target.readyKey] && !options.force) return;
+
+  const connection = state[target.connectionKey];
+  if (connection && connection.state === "connected") {
+    connection.send(JSON.stringify(message));
     return;
   }
 
-  if (els.targetFrame.contentWindow) {
+  if (display === "presenter" && els.targetFrame.contentWindow) {
     els.targetFrame.contentWindow.postMessage(message, window.location.origin);
   }
 }
 
-function blankTarget() {
-  postToTarget({ type: "target:blank" });
+function postToDisplays(message, options = {}) {
+  postToDisplay("presenter", message, options);
+  postToDisplay("stage", message, options);
 }
 
-function setPresentationBlanked(blanked) {
-  state.presentationBlanked = blanked;
-  renderBlankButton();
+function blankDisplay(display) {
+  postToDisplay(display, { type: "target:blank" });
+}
+
+function blankTarget() {
+  blankDisplay("presenter");
+}
+
+function setDisplayBlanked(display, blanked) {
+  const target = getDisplay(display);
+  state[target.blankedKey] = blanked;
+  target.renderBlank();
 
   if (blanked) {
-    blankTarget();
+    blankDisplay(display);
     return;
   }
 
-  syncActiveViewToTarget();
+  syncActiveViewToDisplay(display);
+}
+
+function setPresentationBlanked(blanked) {
+  setDisplayBlanked("presenter", blanked);
+}
+
+function setStageBlanked(blanked) {
+  setDisplayBlanked("stage", blanked);
+}
+
+function closeDisplayWindow(display) {
+  postToDisplay(display, { type: "target:close" }, { force: true });
 }
 
 function closeTargetWindow() {
-  postToTarget({ type: "target:close" }, { force: true });
+  closeDisplayWindow("presenter");
 }
 
 function extensionFor(path) {
@@ -460,93 +586,129 @@ function htmlToText(html) {
 }
 
 async function launchTarget() {
-  state.targetReady = false;
-  renderPresentationButtons();
-  setScreenStatus("Launching presentation display...");
+  return launchDisplay("presenter");
+}
+
+async function launchStage() {
+  return launchDisplay("stage");
+}
+
+async function launchDisplay(display) {
+  const target = getDisplay(display);
+  state[target.readyKey] = false;
+  target.renderButtons();
+  target.setStatus(`Launching ${target.label.toLowerCase()} display...`);
 
   try {
     if (!supportsPresentationRequest()) {
       throw new Error("Presentation Request API is unavailable in this browser.");
     }
 
-    const targetUrl = new URL("target.html", window.location.href);
-    state.presentationRequest = new PresentationRequest([targetUrl.href]);
-    navigator.presentation.defaultRequest = state.presentationRequest;
-    const connection = await state.presentationRequest.start();
-    attachPresentationConnection(connection);
-    state.targetReady = true;
-    state.presentationBlanked = false;
-    renderPresentationButtons();
-    renderBlankButton();
-    setScreenStatus("Presentation display connected.");
-    syncActiveViewToTarget();
+    const targetUrl = new URL(target.url, window.location.href);
+    state[target.requestKey] = new PresentationRequest([targetUrl.href]);
+    if (display === "presenter") navigator.presentation.defaultRequest = state[target.requestKey];
+    const connection = await state[target.requestKey].start();
+    attachDisplayConnection(display, connection);
+    state[target.readyKey] = true;
+    state[target.blankedKey] = false;
+    target.renderButtons();
+    target.renderBlank();
+    target.setStatus(`${target.label} display connected.`);
+    syncTimerToDisplays();
+    syncActiveViewToDisplay(display);
   } catch (error) {
-    state.targetReady = false;
-    renderPresentationButtons();
-    setScreenStatus(`Launch failed: ${error.message}`);
+    state[target.readyKey] = false;
+    target.renderButtons();
+    target.setStatus(`${target.label} launch failed: ${error.message}`);
   }
 }
 
 function attachPresentationConnection(connection) {
-  state.presentationConnection = connection;
+  attachDisplayConnection("presenter", connection);
+}
+
+function attachDisplayConnection(display, connection) {
+  const target = getDisplay(display);
+  state[target.connectionKey] = connection;
 
   connection.addEventListener("connect", () => {
-    state.targetReady = true;
-    state.presentationBlanked = false;
-    renderPresentationButtons();
-    renderBlankButton();
-    setScreenStatus("Presentation display connected.");
-    syncActiveViewToTarget();
+    state[target.readyKey] = true;
+    state[target.blankedKey] = false;
+    target.renderButtons();
+    target.renderBlank();
+    target.setStatus(`${target.label} display connected.`);
+    syncTimerToDisplays();
+    syncActiveViewToDisplay(display);
   });
 
   connection.addEventListener("close", () => {
-    state.targetReady = false;
-    renderPresentationButtons();
-    setScreenStatus("Presentation display closed.");
+    state[target.readyKey] = false;
+    target.renderButtons();
+    target.setStatus(`${target.label} display closed.`);
   });
 
   connection.addEventListener("terminate", () => {
-    state.targetReady = false;
-    renderPresentationButtons();
-    setScreenStatus("Presentation display terminated.");
+    state[target.readyKey] = false;
+    target.renderButtons();
+    target.setStatus(`${target.label} display terminated.`);
   });
 }
 
 async function setActiveView(view, options = {}) {
   if (state.activeView === view && !options.force) return;
 
+  const leavingEmbeddedVideo = state.activeView === "vlc" && state.videoStack === "embedded" && view !== "vlc";
   if (view !== "vlc" && !state.vlc.docked && !options.skipVlcStop) {
     stopVlc({ quiet: true, timeoutMs: 900 });
+  }
+
+  if (leavingEmbeddedVideo) {
+    els.embeddedVideoPlayer.pause();
+    postToDisplays({ type: "target:video-unload" }, { force: true });
   }
 
   state.activeView = view;
   state.promptRunning = false;
   stopPrompt();
-  blankTarget();
+  postToDisplays({ type: "target:blank" });
   savePreferences();
   renderTabs();
   syncActiveViewToTarget();
 }
 
 async function closePresentationDisplay() {
-  closeTargetWindow();
+  closeDisplay("presenter");
+}
 
-  terminatePresentationConnection();
+async function closeStageDisplay() {
+  closeDisplay("stage");
+}
 
-  state.targetReady = false;
-  state.presentationBlanked = false;
-  state.presentationConnection = null;
-  state.presentationRequest = null;
-  els.targetFrame.removeAttribute("src");
-  renderPresentationButtons();
-  renderBlankButton();
-  setScreenStatus("Presentation display closed.");
+function closeDisplay(display) {
+  const target = getDisplay(display);
+  closeDisplayWindow(display);
+  terminateDisplayConnection(display);
+
+  state[target.readyKey] = false;
+  state[target.blankedKey] = false;
+  state[target.connectionKey] = null;
+  state[target.requestKey] = null;
+  if (display === "presenter") els.targetFrame.removeAttribute("src");
+  target.renderButtons();
+  target.renderBlank();
+  target.setStatus(`${target.label} display closed.`);
 }
 
 function terminatePresentationConnection() {
+  terminateDisplayConnection("presenter");
+}
+
+function terminateDisplayConnection(display) {
+  const target = getDisplay(display);
   try {
-    if (state.presentationConnection && state.presentationConnection.state !== "terminated") {
-      state.presentationConnection.terminate();
+    const connection = state[target.connectionKey];
+    if (connection && connection.state !== "terminated") {
+      connection.terminate();
     }
   } catch {
     // Some receivers close themselves before the controller can terminate the connection.
@@ -554,37 +716,55 @@ function terminatePresentationConnection() {
 }
 
 function closePresentationDisplayBeforeUnload() {
-  closeTargetWindow();
-  terminatePresentationConnection();
+  closeDisplayWindow("presenter");
+  closeDisplayWindow("stage");
+  terminateDisplayConnection("presenter");
+  terminateDisplayConnection("stage");
 }
 
 function syncActiveViewToTarget() {
-  if (state.presentationBlanked) {
-    blankTarget();
+  syncActiveViewToDisplay("presenter");
+  syncActiveViewToDisplay("stage");
+}
+
+function syncActiveViewToDisplay(display) {
+  const target = getDisplay(display);
+  if (state[target.blankedKey]) {
+    blankDisplay(display);
     return;
   }
 
   if (state.activeView === "presentation") {
-    syncSlideToTarget();
+    syncSlideToDisplay(display);
     return;
   }
 
   if (state.activeView === "teleprompter") {
-    syncPromptToTarget();
+    syncPromptToDisplay(display);
     return;
   }
 
-  blankTarget();
+  if (state.activeView === "vlc" && state.videoStack === "embedded") {
+    syncEmbeddedVideoToDisplay(display);
+    return;
+  }
+
+  blankDisplay(display);
 }
 
 function renderAll() {
   renderTabs();
   renderPresentationButtons();
+  renderStageButtons();
   renderBlankButton();
+  renderStageBlankButton();
+  renderTimerControls();
   renderSlides();
   renderPrompt();
   renderPromptControls();
   renderVlcConfig();
+  renderVideoStack();
+  renderEmbeddedVideo();
   syncActiveViewToTarget();
 }
 
@@ -595,10 +775,116 @@ function renderPresentationButtons() {
   els.closePresentationButton.setAttribute("aria-pressed", String(!state.targetReady));
 }
 
+function renderStageButtons() {
+  els.launchStageButton.classList.toggle("active", state.stageReady);
+  els.launchStageButton.setAttribute("aria-pressed", String(state.stageReady));
+  els.closeStageButton.classList.toggle("active", !state.stageReady);
+  els.closeStageButton.setAttribute("aria-pressed", String(!state.stageReady));
+}
+
 function renderBlankButton() {
   els.blankPresentationButton.textContent = state.presentationBlanked ? "Show Presentation" : "Blank Presentation";
   els.blankPresentationButton.setAttribute("aria-pressed", String(state.presentationBlanked));
   els.blankPresentationButton.classList.toggle("active", state.presentationBlanked);
+}
+
+function renderStageBlankButton() {
+  els.blankStageButton.textContent = state.stageBlanked ? "Show Stage" : "Blank Stage";
+  els.blankStageButton.setAttribute("aria-pressed", String(state.stageBlanked));
+  els.blankStageButton.classList.toggle("active", state.stageBlanked);
+}
+
+function durationInputToMs(value) {
+  const parts = (value || "00:05:00").split(":").map((part) => Number(part));
+  if (parts.length < 2 || parts.some((part) => !Number.isFinite(part))) return 300000;
+  const [hours, minutes, seconds = 0] = parts.length === 3 ? parts : [0, parts[0], parts[1]];
+  return Math.max(1000, ((hours * 3600) + (minutes * 60) + seconds) * 1000);
+}
+
+function msToDurationInput(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "--:--";
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function getTimerElapsedMs() {
+  const base = Number.isFinite(state.timer.elapsedMs) ? state.timer.elapsedMs : 0;
+  if (!state.timer.running || !Number.isFinite(state.timer.startedAt)) return base;
+  return base + Math.max(0, Date.now() - state.timer.startedAt);
+}
+
+function getTimerDisplaySeconds() {
+  const elapsed = getTimerElapsedMs();
+  if (state.timer.mode === "countdown") return Math.max(0, (state.timer.durationMs - elapsed) / 1000);
+  return elapsed / 1000;
+}
+
+function getTimerPayload() {
+  return {
+    type: "target:timer-state",
+    mode: state.timer.mode,
+    running: state.timer.running,
+    elapsedMs: state.timer.elapsedMs,
+    durationMs: state.timer.durationMs,
+    startedAt: state.timer.startedAt,
+    sentAt: Date.now()
+  };
+}
+
+function renderTimerControls() {
+  els.timerMode.value = state.timer.mode;
+  if (document.activeElement !== els.timerDuration) {
+    els.timerDuration.value = msToDurationInput(state.timer.durationMs);
+  }
+  els.timerDuration.disabled = state.timer.mode !== "countdown";
+  els.timerDisplay.textContent = formatDuration(getTimerDisplaySeconds());
+  els.timerStartButton.classList.toggle("active", state.timer.running);
+  els.timerStartButton.setAttribute("aria-pressed", String(state.timer.running));
+  els.timerPauseButton.classList.toggle("active", !state.timer.running);
+  els.timerPauseButton.setAttribute("aria-pressed", String(!state.timer.running));
+}
+
+function syncTimerToDisplays() {
+  postToDisplays(getTimerPayload());
+}
+
+function startTimer() {
+  if (state.timer.running) return;
+  state.timer.running = true;
+  state.timer.startedAt = Date.now();
+  renderTimerControls();
+  syncTimerToDisplays();
+  savePreferences();
+}
+
+function pauseTimer() {
+  state.timer.elapsedMs = getTimerElapsedMs();
+  state.timer.running = false;
+  state.timer.startedAt = 0;
+  renderTimerControls();
+  syncTimerToDisplays();
+  savePreferences();
+}
+
+function resetTimer() {
+  state.timer.running = false;
+  state.timer.startedAt = 0;
+  state.timer.elapsedMs = 0;
+  renderTimerControls();
+  syncTimerToDisplays();
+  savePreferences();
 }
 
 function renderTabs() {
@@ -694,16 +980,28 @@ function handlePromptKeyboard(event) {
 }
 
 function syncSlideToTarget() {
+  syncSlideToDisplay("presenter");
+  syncSlideToDisplay("stage");
+}
+
+function syncSlideToDisplay(display) {
   const slide = state.slides[state.selectedSlide];
   if (!slide?.url) {
-    blankTarget();
+    blankDisplay(display);
     return;
   }
 
-  postToTarget({
+  const nextSlide = state.slides[state.selectedSlide + 1];
+  postToDisplay(display, {
     type: "target:slide",
     src: slide.url,
-    alt: slide.name || `Slide ${state.selectedSlide + 1}`
+    alt: slide.name || `Slide ${state.selectedSlide + 1}`,
+    currentIndex: state.selectedSlide,
+    totalSlides: state.slides.length,
+    note: slide.error || slide.note || "No note for this slide.",
+    nextSrc: nextSlide?.url || "",
+    nextAlt: nextSlide?.name || (nextSlide ? `Slide ${state.selectedSlide + 2}` : ""),
+    nextNote: nextSlide?.note || nextSlide?.error || ""
   });
 }
 
@@ -746,10 +1044,15 @@ function updateCurrentLine() {
 }
 
 function syncPromptToTarget() {
+  syncPromptToDisplay("presenter");
+  syncPromptToDisplay("stage");
+}
+
+function syncPromptToDisplay(display) {
   const anchor = getPromptAnchor();
   const progressState = getPromptProgressState(anchor);
 
-  postToTarget({
+  postToDisplay(display, {
     type: "target:prompt",
     blocks: state.promptBlocks,
     scrollTop: els.teleprompterScroll.scrollTop,
@@ -762,10 +1065,15 @@ function syncPromptToTarget() {
 }
 
 function syncPromptPositionToTarget() {
+  syncPromptPositionToDisplay("presenter");
+  syncPromptPositionToDisplay("stage");
+}
+
+function syncPromptPositionToDisplay(display) {
   const anchor = getPromptAnchor();
   const progressState = getPromptProgressState(anchor);
 
-  postToTarget({
+  postToDisplay(display, {
     type: "target:prompt-position",
     scrollTop: els.teleprompterScroll.scrollTop,
     anchorIndex: anchor.index,
@@ -915,6 +1223,211 @@ function saveVlcConfig() {
   pollVlc();
 }
 
+function renderVideoStack() {
+  const embedded = state.videoStack === "embedded";
+  els.videoStackVlc.checked = !embedded;
+  els.videoStackEmbedded.checked = embedded;
+  els.embeddedVideoPanel.hidden = !embedded;
+  els.vlcConfig.hidden = embedded;
+  els.vlcRemotePad.hidden = embedded;
+  els.vlcAdvanced.hidden = embedded;
+  els.playlistList.hidden = embedded;
+  els.embeddedVideoList.hidden = !embedded;
+  els.refreshVlcButton.hidden = embedded;
+  els.vlcNowPlaying.textContent = embedded
+    ? (state.embeddedVideo.selectedName || "No video selected")
+    : els.vlcNowPlaying.textContent;
+}
+
+function renderEmbeddedVideo() {
+  const video = state.embeddedVideo;
+  els.embeddedVideoTitle.textContent = video.selectedName || "No video selected";
+  els.embeddedVideoElapsed.textContent = formatDuration(video.currentTime);
+  els.embeddedVideoDuration.textContent = formatDuration(video.duration);
+  els.embeddedVideoSeek.max = Number.isFinite(video.duration) ? String(video.duration) : "0";
+  if (!video.seeking) els.embeddedVideoSeek.value = Number.isFinite(video.currentTime) ? String(video.currentTime) : "0";
+  els.embeddedPlayPauseButton.textContent = video.playing ? "Pause" : "Play";
+  els.embeddedVideoList.textContent = "";
+
+  if (!video.files.length) {
+    els.embeddedVideoList.textContent = "Choose a video folder to list videos.";
+    return;
+  }
+
+  video.files.forEach((item) => {
+    const button = document.createElement("button");
+    button.className = "playlist-item";
+    button.type = "button";
+    button.classList.toggle("active", item.id === video.selectedId);
+    button.textContent = item.name;
+    button.addEventListener("click", () => selectEmbeddedVideo(item.id));
+    els.embeddedVideoList.append(button);
+  });
+}
+
+function releaseEmbeddedVideoUrl() {
+  els.embeddedVideoPlayer.pause();
+  els.embeddedVideoPlayer.removeAttribute("src");
+  els.embeddedVideoPlayer.load();
+  if (state.embeddedVideo.objectUrl) URL.revokeObjectURL(state.embeddedVideo.objectUrl);
+  state.embeddedVideo.objectUrl = "";
+}
+
+async function loadStoredVideoList() {
+  if (!window.videoStore) return;
+  try {
+    state.embeddedVideo.files = await window.videoStore.loadStoredVideos();
+    const selected = state.embeddedVideo.files.find((item) => item.id === state.embeddedVideo.selectedId);
+    state.embeddedVideo.selectedName = selected?.name || "";
+    if (!selected) state.embeddedVideo.selectedId = "";
+    renderVideoStack();
+    renderEmbeddedVideo();
+    if (state.videoStack === "embedded" && state.embeddedVideo.selectedId) {
+      await loadEmbeddedVideo(state.embeddedVideo.selectedId, { quiet: true });
+    }
+  } catch (error) {
+    setVlcStatus(`Embedded video list unavailable: ${error.message}`);
+  }
+}
+
+async function chooseVideoFolder() {
+  if (!supportsFileSystemAccess()) {
+    setVlcStatus("File System Access API requires Chromium on localhost or HTTPS.");
+    return;
+  }
+  if (!window.videoStore) {
+    setVlcStatus("Embedded video storage is unavailable.");
+    return;
+  }
+
+  try {
+    const directoryHandle = await window.showDirectoryPicker({ startIn: "videos" });
+    state.embeddedVideo.files = await window.videoStore.storeVideoDirectory(directoryHandle);
+    state.embeddedVideo.selectedId = state.embeddedVideo.files[0]?.id || "";
+    state.embeddedVideo.selectedName = state.embeddedVideo.files[0]?.name || "";
+    renderEmbeddedVideo();
+    savePreferences();
+    if (state.embeddedVideo.selectedId) await loadEmbeddedVideo(state.embeddedVideo.selectedId);
+    setVlcStatus(`Loaded ${state.embeddedVideo.files.length} embedded video(s).`);
+  } catch (error) {
+    setVlcStatus(`Video folder failed: ${error.message}`);
+  }
+}
+
+async function selectEmbeddedVideo(id) {
+  state.embeddedVideo.selectedId = id;
+  const selected = state.embeddedVideo.files.find((item) => item.id === id);
+  state.embeddedVideo.selectedName = selected?.name || "";
+  state.embeddedVideo.currentTime = 0;
+  state.embeddedVideo.duration = 0;
+  state.embeddedVideo.playing = false;
+  renderVideoStack();
+  renderEmbeddedVideo();
+  savePreferences();
+  await loadEmbeddedVideo(id);
+}
+
+async function loadEmbeddedVideo(id, options = {}) {
+  if (!id) return;
+  try {
+    if (!window.videoStore) throw new Error("Video store is unavailable.");
+    releaseEmbeddedVideoUrl();
+    const file = await window.videoStore.getVideoFile(id);
+    state.embeddedVideo.objectUrl = URL.createObjectURL(file);
+    els.embeddedVideoPlayer.src = state.embeddedVideo.objectUrl;
+    els.embeddedVideoPlayer.currentTime = state.embeddedVideo.currentTime || 0;
+    els.embeddedVideoPlayer.load();
+    renderEmbeddedVideo();
+    if (state.activeView === "vlc" && state.videoStack === "embedded") syncEmbeddedVideoToDisplays();
+  } catch (error) {
+    if (!options.quiet) setVlcStatus(`Video load failed: ${error.message}`);
+  }
+}
+
+function setVideoStack(stack) {
+  const nextStack = stack === "embedded" ? "embedded" : "vlc";
+  if (state.videoStack === nextStack) return;
+
+  state.videoStack = nextStack;
+  state.embeddedVideo.playing = false;
+  if (nextStack === "vlc") {
+    postToDisplays({ type: "target:video-unload" }, { force: true });
+    releaseEmbeddedVideoUrl();
+    state.embeddedVideo.playing = false;
+    state.embeddedVideo.currentTime = 0;
+    pollVlc();
+  } else {
+    stopVlc({ quiet: true, timeoutMs: 900 });
+    if (state.embeddedVideo.selectedId && !state.embeddedVideo.objectUrl) {
+      loadEmbeddedVideo(state.embeddedVideo.selectedId, { quiet: true });
+    }
+    if (state.activeView === "vlc") syncEmbeddedVideoToDisplays();
+    setVlcStatus("Embedded video mode.");
+  }
+  renderVideoStack();
+  renderEmbeddedVideo();
+  savePreferences();
+  syncActiveViewToTarget();
+}
+
+function getEmbeddedVideoPayload() {
+  return {
+    type: "target:video-load",
+    id: state.embeddedVideo.selectedId,
+    name: state.embeddedVideo.selectedName,
+    currentTime: state.embeddedVideo.currentTime,
+    playing: state.embeddedVideo.playing
+  };
+}
+
+function syncEmbeddedVideoToDisplay(display) {
+  if (!state.embeddedVideo.selectedId) {
+    postToDisplay(display, { type: "target:video-unload" });
+    return;
+  }
+  postToDisplay(display, getEmbeddedVideoPayload());
+}
+
+function syncEmbeddedVideoToDisplays() {
+  syncEmbeddedVideoToDisplay("presenter");
+  syncEmbeddedVideoToDisplay("stage");
+}
+
+function sendEmbeddedVideoControl(action, extra = {}) {
+  const message = {
+    type: "target:video-control",
+    action,
+    ...extra
+  };
+  postToDisplays(message);
+}
+
+function playPauseEmbeddedVideo() {
+  if (!state.embeddedVideo.selectedId) return;
+  if (els.embeddedVideoPlayer.paused) {
+    els.embeddedVideoPlayer.play().catch((error) => setVlcStatus(`Embedded play failed: ${error.message}`));
+  } else {
+    els.embeddedVideoPlayer.pause();
+  }
+}
+
+function stopEmbeddedVideo() {
+  els.embeddedVideoPlayer.pause();
+  els.embeddedVideoPlayer.currentTime = 0;
+  state.embeddedVideo.currentTime = 0;
+  state.embeddedVideo.playing = false;
+  renderEmbeddedVideo();
+  sendEmbeddedVideoControl("stop");
+}
+
+function skipEmbeddedVideo(delta) {
+  if (!state.embeddedVideo.selectedId) return;
+  els.embeddedVideoPlayer.currentTime = Math.max(0, els.embeddedVideoPlayer.currentTime + delta);
+  state.embeddedVideo.currentTime = els.embeddedVideoPlayer.currentTime;
+  renderEmbeddedVideo();
+  sendEmbeddedVideoControl("skip", { delta });
+}
+
 function vlcBaseUrl() {
   return `http://${state.vlc.host}:${state.vlc.port}/requests`;
 }
@@ -949,6 +1462,8 @@ async function vlcRequest(path, params = {}, options = {}) {
 }
 
 async function pollVlc() {
+  if (state.videoStack !== "vlc") return;
+
   try {
     const status = await vlcRequest("status.json");
     const playlist = await vlcRequest("playlist.json");
@@ -1039,6 +1554,9 @@ function bindEvents() {
   els.launchButton.addEventListener("click", launchTarget);
   els.blankPresentationButton.addEventListener("click", () => setPresentationBlanked(!state.presentationBlanked));
   els.closePresentationButton.addEventListener("click", closePresentationDisplay);
+  els.launchStageButton.addEventListener("click", launchStage);
+  els.blankStageButton.addEventListener("click", () => setStageBlanked(!state.stageBlanked));
+  els.closeStageButton.addEventListener("click", closeStageDisplay);
   els.aboutButton.addEventListener("click", (event) => {
     event.stopPropagation();
     setAboutOpen(!isAboutOpen());
@@ -1055,6 +1573,23 @@ function bindEvents() {
   els.startPromptButton.addEventListener("click", startPrompt);
   els.pausePromptButton.addEventListener("click", stopPrompt);
   els.resetPromptButton.addEventListener("click", resetPrompt);
+  els.timerStartButton.addEventListener("click", startTimer);
+  els.timerPauseButton.addEventListener("click", pauseTimer);
+  els.timerResetButton.addEventListener("click", resetTimer);
+  els.timerMode.addEventListener("change", () => {
+    pauseTimer();
+    state.timer.mode = els.timerMode.value === "countdown" ? "countdown" : "stopwatch";
+    renderTimerControls();
+    syncTimerToDisplays();
+    savePreferences();
+  });
+  els.timerDuration.addEventListener("change", () => {
+    state.timer.durationMs = durationInputToMs(els.timerDuration.value);
+    if (state.timer.mode === "countdown") resetTimer();
+    renderTimerControls();
+    syncTimerToDisplays();
+    savePreferences();
+  });
 
   els.tabs.forEach((tab) => {
     tab.addEventListener("click", () => setActiveView(tab.dataset.view));
@@ -1114,6 +1649,44 @@ function bindEvents() {
   els.vlcPlayPauseButton.addEventListener("click", () => vlcCommand("pl_pause"));
   els.vlcNextButton.addEventListener("click", () => vlcCommand("pl_next"));
   els.vlcStopButton.addEventListener("click", () => stopVlc());
+  els.videoStackVlc.addEventListener("change", () => setVideoStack("vlc"));
+  els.videoStackEmbedded.addEventListener("change", () => setVideoStack("embedded"));
+  els.chooseVideoFolderButton.addEventListener("click", chooseVideoFolder);
+  els.embeddedPlayPauseButton.addEventListener("click", playPauseEmbeddedVideo);
+  els.embeddedStopButton.addEventListener("click", stopEmbeddedVideo);
+  els.embeddedBackButton.addEventListener("click", () => skipEmbeddedVideo(-10));
+  els.embeddedForwardButton.addEventListener("click", () => skipEmbeddedVideo(10));
+  els.embeddedVideoSeek.addEventListener("input", () => {
+    state.embeddedVideo.seeking = true;
+    state.embeddedVideo.currentTime = Number(els.embeddedVideoSeek.value) || 0;
+    renderEmbeddedVideo();
+  });
+  els.embeddedVideoSeek.addEventListener("change", () => {
+    state.embeddedVideo.seeking = false;
+    els.embeddedVideoPlayer.currentTime = Number(els.embeddedVideoSeek.value) || 0;
+    state.embeddedVideo.currentTime = els.embeddedVideoPlayer.currentTime;
+    renderEmbeddedVideo();
+    sendEmbeddedVideoControl("seek", { currentTime: state.embeddedVideo.currentTime });
+  });
+  els.embeddedVideoPlayer.addEventListener("loadedmetadata", () => {
+    state.embeddedVideo.duration = els.embeddedVideoPlayer.duration;
+    renderEmbeddedVideo();
+  });
+  els.embeddedVideoPlayer.addEventListener("timeupdate", () => {
+    state.embeddedVideo.currentTime = els.embeddedVideoPlayer.currentTime;
+    state.embeddedVideo.duration = els.embeddedVideoPlayer.duration;
+    renderEmbeddedVideo();
+  });
+  els.embeddedVideoPlayer.addEventListener("play", () => {
+    state.embeddedVideo.playing = true;
+    renderEmbeddedVideo();
+    sendEmbeddedVideoControl("play", { currentTime: els.embeddedVideoPlayer.currentTime });
+  });
+  els.embeddedVideoPlayer.addEventListener("pause", () => {
+    state.embeddedVideo.playing = false;
+    renderEmbeddedVideo();
+    sendEmbeddedVideoControl("pause", { currentTime: els.embeddedVideoPlayer.currentTime });
+  });
   els.vlcDocked.addEventListener("change", () => {
     state.vlc.docked = els.vlcDocked.checked;
     savePreferences();
@@ -1130,6 +1703,7 @@ function init() {
   bindEvents();
   renderAll();
   loadAboutInfo();
+  loadStoredVideoList();
 
   if (!supportsFileSystemAccess()) {
     setProjectStatus("File System Access API requires Chromium on localhost or HTTPS.");
@@ -1140,13 +1714,28 @@ function init() {
   }
 
   vlcPollTimer = window.setInterval(pollVlc, 5000);
+  timerRenderTimer = window.setInterval(() => {
+    if (state.timer.mode === "countdown" && state.timer.running && getTimerDisplaySeconds() <= 0) {
+      pauseTimer();
+    }
+    renderTimerControls();
+  }, 250);
+  videoSyncTimer = window.setInterval(() => {
+    if (state.videoStack === "embedded" && state.activeView === "vlc" && state.embeddedVideo.playing) {
+      state.embeddedVideo.currentTime = els.embeddedVideoPlayer.currentTime;
+      sendEmbeddedVideoControl("seek", { currentTime: state.embeddedVideo.currentTime });
+    }
+  }, videoSyncIntervalMs);
   pollVlc();
 }
 
 window.addEventListener("beforeunload", () => {
   closePresentationDisplayBeforeUnload();
   releaseSlideUrls();
+  releaseEmbeddedVideoUrl();
   window.clearInterval(vlcPollTimer);
+  window.clearInterval(timerRenderTimer);
+  window.clearInterval(videoSyncTimer);
 });
 
 init();

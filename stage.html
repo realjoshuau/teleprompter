@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Stage View</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body class="target-page">
+    <main id="stageRoot" class="stage-view blank">
+      <section id="stageBlank" class="target-blank" aria-live="polite">
+        <p>Stage view blanked.</p>
+      </section>
+
+      <section id="stageSlide" class="stage-slide-view" hidden>
+        <div class="stage-slide-main">
+          <img id="stageSlideImage" alt="">
+        </div>
+        <aside class="stage-rail">
+          <div class="stage-clock-block">
+            <span>Time</span>
+            <strong id="stageClock">--:--</strong>
+          </div>
+          <div class="stage-clock-block">
+            <span>Timer</span>
+            <strong id="stageTimer">00:00</strong>
+          </div>
+          <div class="stage-meta">
+            <span id="stageSlideCount">Slide 0 of 0</span>
+          </div>
+          <div class="stage-notes">
+            <span>Notes</span>
+            <p id="stageSlideNote">No notes.</p>
+          </div>
+          <figure class="stage-next-slide">
+            <img id="stageNextImage" alt="">
+            <figcaption id="stageNextLabel">Next slide</figcaption>
+          </figure>
+        </aside>
+      </section>
+
+      <section id="stagePrompt" class="stage-prompt-view" hidden>
+        <div class="stage-topbar">
+          <div>
+            <span>Time</span>
+            <strong id="stagePromptClock">--:--</strong>
+          </div>
+          <div>
+            <span>Timer</span>
+            <strong id="stagePromptTimer">00:00</strong>
+          </div>
+        </div>
+        <div id="stagePromptScroll" class="target-prompt-scroll"></div>
+      </section>
+
+      <section id="stageVideo" class="stage-video-view" hidden>
+        <video id="stageVideoPlayer" playsinline></video>
+        <div class="stage-video-overlay">
+          <div>
+            <span>Time</span>
+            <strong id="stageVideoClock">--:--</strong>
+          </div>
+          <div>
+            <span>Timer</span>
+            <strong id="stageVideoTimer">00:00</strong>
+          </div>
+          <div>
+            <span>Ends In</span>
+            <strong id="stageVideoRemaining">--:--</strong>
+          </div>
+        </div>
+        <p id="stageVideoStatus" class="stage-video-status">No embedded video loaded.</p>
+      </section>
+    </main>
+
+    <script src="video-store.js" defer></script>
+    <script src="stage.js" defer></script>
+  </body>
+</html>

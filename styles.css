@@ -31,6 +31,7 @@ body {
 
 button,
 input,
+select,
 .button-link {
   font: inherit;
 }
@@ -77,6 +78,16 @@ button.danger {
 }
 
 input {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.55rem 0.7rem;
+  background: #0f1416;
+  color: var(--text);
+}
+
+select {
   width: 100%;
   min-height: 40px;
   border: 1px solid var(--line);
@@ -152,6 +163,7 @@ h2 {
 
 .topbar,
 .status-strip,
+.timer-strip,
 .tabs,
 .tool-panel {
   border: 1px solid var(--line);
@@ -237,7 +249,7 @@ h2 {
 
 .status-strip {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin: 14px 0;
   padding: 12px 14px;
@@ -247,6 +259,30 @@ h2 {
 
 .status-strip span {
   overflow-wrap: anywhere;
+}
+
+.timer-strip {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.7fr) minmax(150px, 0.8fr) auto minmax(300px, 1fr);
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 12px 14px;
+}
+
+.timer-strip label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 760;
+}
+
+.timer-strip strong {
+  min-width: 100px;
+  color: var(--text);
+  font-size: 1.8rem;
+  line-height: 1;
 }
 
 .tabs {
@@ -267,8 +303,13 @@ h2 {
 #launchButton.active,
 #blankPresentationButton.active,
 #closePresentationButton.active,
+#launchStageButton.active,
+#blankStageButton.active,
+#closeStageButton.active,
 #startPromptButton.active,
-#pausePromptButton.active {
+#pausePromptButton.active,
+#timerStartButton.active,
+#timerPauseButton.active {
   color: #08130b;
   background: var(--accent);
 }
@@ -514,6 +555,47 @@ h2 {
   flex: 1 1 120px;
 }
 
+.stack-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+
+.stack-switcher .toggle-row {
+  margin: 0;
+}
+
+.compact-heading {
+  margin-top: 16px;
+}
+
+.embedded-video-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.embedded-video-player {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #050708;
+}
+
+.video-scrubber {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-weight: 760;
+}
+
 .advanced {
   margin-top: 18px;
   color: var(--muted);
@@ -596,6 +678,30 @@ h2 {
   filter: grayscale(1);
 }
 
+.target-video {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.target-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.target-video-status,
+.stage-video-status {
+  position: absolute;
+  inset: auto 5vw 6vh;
+  color: #d8d8d8;
+  font-size: clamp(1.2rem, 2.3vw, 2.4rem);
+  font-weight: 800;
+  text-align: center;
+}
+
 .target-prompt-scroll {
   --target-prompt-font-size: 32px;
   --target-prompt-zoom: 1;
@@ -661,6 +767,157 @@ h2 {
   text-shadow: 0 1px 8px rgba(0, 0, 0, 0.75);
 }
 
+.stage-view {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: #000;
+  color: #f4f4f1;
+}
+
+.stage-slide-view {
+  display: grid;
+  grid-template-columns: minmax(0, 4fr) minmax(340px, 1.15fr);
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.stage-slide-main {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  min-height: 0;
+  background: #000;
+}
+
+.stage-slide-main img,
+.stage-next-slide img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.stage-rail {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  gap: 2vh;
+  min-width: 0;
+  min-height: 0;
+  padding: 3vh 2vw;
+  border-left: 1px solid rgba(255, 255, 255, 0.2);
+  background: #101314;
+}
+
+.stage-clock-block,
+.stage-topbar div,
+.stage-video-overlay div {
+  display: grid;
+  gap: 0.4vh;
+}
+
+.stage-clock-block span,
+.stage-topbar span,
+.stage-video-overlay span,
+.stage-notes span,
+.stage-meta {
+  color: #aeb7b5;
+  font-size: clamp(0.9rem, 1.25vw, 1.5rem);
+  font-weight: 850;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.stage-clock-block strong,
+.stage-topbar strong,
+.stage-video-overlay strong {
+  font-size: clamp(2.4rem, 5vw, 6.2rem);
+  line-height: 0.95;
+}
+
+.stage-notes {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stage-notes p {
+  margin: 1vh 0 0;
+  color: #f4f4f1;
+  font-size: clamp(1.7rem, 2.7vw, 4.5rem);
+  font-weight: 760;
+  line-height: 1.08;
+  white-space: pre-wrap;
+}
+
+.stage-next-slide {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 1vh;
+  min-height: 18vh;
+  margin: 0;
+}
+
+.stage-next-slide figcaption {
+  overflow: hidden;
+  color: #d8d8d8;
+  font-size: clamp(1rem, 1.25vw, 1.7rem);
+  font-weight: 800;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stage-prompt-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #111;
+  filter: grayscale(1);
+}
+
+.stage-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  display: flex;
+  gap: 4vw;
+  padding: 2vh 3vw;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.82), rgba(0, 0, 0, 0));
+}
+
+.stage-prompt-view .target-prompt-scroll {
+  padding-top: 38vh;
+}
+
+.stage-video-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.stage-video-view video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #000;
+}
+
+.stage-video-overlay {
+  position: absolute;
+  top: 2vh;
+  left: 2vw;
+  right: 2vw;
+  z-index: 4;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  justify-content: space-between;
+  gap: 2vw;
+  padding: 1.5vh 2vw;
+  background: rgba(0, 0, 0, 0.72);
+}
+
 [hidden] {
   display: none !important;
 }
@@ -669,6 +926,7 @@ h2 {
   .topbar,
   .workspace-grid,
   .status-strip,
+  .timer-strip,
   .config-grid,
   .prompt-controls {
     grid-template-columns: 1fr;

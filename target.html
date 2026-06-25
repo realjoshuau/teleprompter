@@ -25,8 +25,14 @@
           <div id="targetProgressPercent" class="target-progress-percent"></div>
         </div>
       </section>
+
+      <section id="targetVideo" class="target-video" hidden>
+        <video id="targetVideoPlayer" playsinline></video>
+        <p id="targetVideoStatus" class="target-video-status">No embedded video loaded.</p>
+      </section>
     </main>
 
+    <script src="video-store.js" defer></script>
     <script src="target.js" defer></script>
   </body>
 </html>
