@@ -676,6 +676,23 @@ function handleSlideKeyboard(event) {
   changeSlide(delta);
 }
 
+function handlePromptKeyboard(event) {
+  if (state.activeView !== "teleprompter" || event.repeat || isEditableTarget(event.target)) return;
+
+  const promptKeys = {
+    ArrowUp: -1,
+    ArrowDown: 1,
+    " ": 1,
+    Space: 1,
+    Spacebar: 1
+  };
+  const delta = promptKeys[event.key];
+  if (!delta) return;
+
+  event.preventDefault();
+  changePromptBlock(delta);
+}
+
 function syncSlideToTarget() {
   const slide = state.slides[state.selectedSlide];
   if (!slide?.url) {
@@ -805,6 +822,25 @@ function setActiveBlockFromScroll() {
     state.activeBlock = activeIndex;
     updateCurrentLine();
   }
+}
+
+function changePromptBlock(delta) {
+  if (!state.promptBlocks.length) return;
+
+  const nextIndex = Math.max(0, Math.min(state.promptBlocks.length - 1, state.activeBlock + delta));
+  if (nextIndex === state.activeBlock) return;
+
+  const blocks = Array.from(els.teleprompterScroll.querySelectorAll(".prompt-block"));
+  const nextBlock = blocks[nextIndex];
+  if (!nextBlock) return;
+
+  state.activeBlock = nextIndex;
+  const containerTop = els.teleprompterScroll.getBoundingClientRect().top;
+  const marker = containerTop + els.teleprompterScroll.clientHeight * 0.36;
+  const nextTop = nextBlock.getBoundingClientRect().top;
+  els.teleprompterScroll.scrollTop += nextTop - marker;
+  updateCurrentLine();
+  syncPromptPositionToTarget();
 }
 
 function getPromptAnchor() {
@@ -1012,6 +1048,7 @@ function bindEvents() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") setAboutOpen(false);
     handleSlideKeyboard(event);
+    handlePromptKeyboard(event);
   });
   els.prevSlideButton.addEventListener("click", () => changeSlide(-1));
   els.nextSlideButton.addEventListener("click", () => changeSlide(1));
