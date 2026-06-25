@@ -189,7 +189,7 @@ function updateProgressOverlay(data = {}) {
 
 function showSlide(data = {}) {
   const layout = data.stagePresentationLayout === "script-focus" ? "script-focus" : "slide-focus";
-  const scriptZoom = Number.isFinite(data.stageScriptZoom) ? Math.max(45, Math.min(140, data.stageScriptZoom)) : 100;
+  const scriptZoom = Number.isFinite(data.stageScriptZoom) ? Math.max(55, Math.min(130, data.stageScriptZoom)) : 100;
   slideView.classList.toggle("script-focus", layout === "script-focus");
   slideView.classList.toggle("slide-focus", layout !== "script-focus");
   slideView.style.setProperty("--stage-script-zoom", String(scriptZoom / 100));

@@ -183,7 +183,7 @@ function loadPreferences() {
       video: typeof saved.stageTimers?.video === "boolean" ? saved.stageTimers.video : state.stageTimers.video
     };
     state.stagePresentationLayout = saved.stagePresentationLayout === "script-focus" ? "script-focus" : "slide-focus";
-    state.stageScriptZoom = Number.isFinite(saved.stageScriptZoom) ? Math.max(45, Math.min(140, saved.stageScriptZoom)) : state.stageScriptZoom;
+    state.stageScriptZoom = Number.isFinite(saved.stageScriptZoom) ? Math.max(55, Math.min(130, saved.stageScriptZoom)) : state.stageScriptZoom;
     state.vlc = { ...state.vlc, ...(saved.vlc || {}) };
   } catch {
     localStorage.removeItem(storageKey);
@@ -1631,7 +1631,7 @@ function bindEvents() {
   });
 
   els.stageScriptZoom.addEventListener("input", () => {
-    state.stageScriptZoom = Number(els.stageScriptZoom.value) || 100;
+    state.stageScriptZoom = Math.max(55, Math.min(130, Number(els.stageScriptZoom.value) || 100));
     els.stageScriptZoomValue.textContent = `${state.stageScriptZoom}%`;
     if (state.stagePresentationLayout === "script-focus") {
       state.stageBlanked = false;

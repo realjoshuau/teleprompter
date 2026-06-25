@@ -855,11 +855,19 @@ h2 {
   background: #050708;
 }
 
+.stage-slide-view.script-focus .stage-notes {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+
 .stage-slide-view.script-focus .stage-notes p {
+  flex: 1;
+  overflow: auto;
   color: #fff;
-  font-size: clamp(2rem, calc(6.8vw * var(--stage-script-zoom)), 10rem);
-  font-weight: 850;
-  line-height: 0.98;
+  font-size: clamp(1.45rem, calc(2.1vw * var(--stage-script-zoom)), 3.6rem);
+  font-weight: 780;
+  line-height: 1.16;
 }
 
 .stage-slide-view.script-focus .stage-next-slide {
