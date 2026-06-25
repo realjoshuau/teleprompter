@@ -862,6 +862,9 @@ function syncTimerToDisplays() {
 
 function startTimer() {
   if (state.timer.running) return;
+  if (state.timer.mode === "countdown" && getTimerElapsedMs() >= state.timer.durationMs) {
+    state.timer.elapsedMs = 0;
+  }
   state.timer.running = true;
   state.timer.startedAt = Date.now();
   renderTimerControls();
@@ -1577,8 +1580,11 @@ function bindEvents() {
   els.timerPauseButton.addEventListener("click", pauseTimer);
   els.timerResetButton.addEventListener("click", resetTimer);
   els.timerMode.addEventListener("change", () => {
-    pauseTimer();
-    state.timer.mode = els.timerMode.value === "countdown" ? "countdown" : "stopwatch";
+    const nextMode = els.timerMode.value === "countdown" ? "countdown" : "stopwatch";
+    state.timer.running = false;
+    state.timer.startedAt = 0;
+    state.timer.elapsedMs = 0;
+    state.timer.mode = nextMode;
     renderTimerControls();
     syncTimerToDisplays();
     savePreferences();

@@ -890,6 +890,15 @@ h2 {
   padding-top: 38vh;
 }
 
+.stage-prompt-view .target-progress {
+  z-index: 7;
+}
+
+.stage-prompt-view .target-progress-top .target-progress-percent {
+  top: 1.2vh;
+  bottom: auto;
+}
+
 .stage-video-view {
   position: relative;
   width: 100%;
