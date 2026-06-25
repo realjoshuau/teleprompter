@@ -242,9 +242,22 @@ async function loadVideo(data = {}, file = data.file) {
   setMode("video");
 
   try {
-    if (!(file instanceof Blob)) throw new Error("Video file was not received from the controller.");
-    videoUrl = URL.createObjectURL(file);
-    videoPlayer.src = videoUrl;
+    videoStatus.hidden = false;
+    videoStatus.textContent = "Loading embedded video from local file access...";
+
+    if (file instanceof Blob) {
+      videoUrl = URL.createObjectURL(file);
+      videoPlayer.src = videoUrl;
+    } else if (data.id) {
+      if (!window.videoStore) throw new Error("Video store is unavailable.");
+      const localFile = await window.videoStore.getVideoFile(data.id);
+      videoUrl = URL.createObjectURL(localFile);
+      videoPlayer.src = videoUrl;
+    } else if (typeof data.src === "string" && data.src) {
+      videoPlayer.src = data.src;
+    } else {
+      throw new Error("Video id was not received from the controller.");
+    }
     videoPlayer.currentTime = Number.isFinite(data.currentTime) ? data.currentTime : 0;
     videoPlayer.muted = true;
     videoStatus.hidden = true;
@@ -364,12 +377,7 @@ function handleControllerMessage(message) {
     if (message.file instanceof Blob) {
       loadVideo(message, message.file);
     } else {
-      pendingVideoData = message;
-      unloadVideo();
-      setMode("video");
-      pendingVideoData = message;
-      videoStatus.hidden = false;
-      videoStatus.textContent = "Loading embedded video from controller...";
+      loadVideo(message);
     }
     return;
   }

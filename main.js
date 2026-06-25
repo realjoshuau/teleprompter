@@ -388,30 +388,6 @@ function postToDisplay(display, message, options = {}) {
   }
 }
 
-function postVideoLoadToDisplay(display, payload, file) {
-  const target = getDisplay(display);
-  if (!state[target.readyKey]) return;
-
-  if (display === "stage") {
-    const stageWindow = state[target.windowKey];
-    if (stageWindow && !stageWindow.closed) {
-      stageWindow.postMessage({ ...payload, file }, window.location.origin);
-    }
-    return;
-  }
-
-  const connection = state[target.connectionKey];
-  if (connection && connection.state === "connected") {
-    connection.send(JSON.stringify(payload));
-    connection.send(file);
-    return;
-  }
-
-  if (display === "presenter" && els.targetFrame.contentWindow) {
-    els.targetFrame.contentWindow.postMessage({ ...payload, file }, window.location.origin);
-  }
-}
-
 function postToDisplays(message, options = {}) {
   postToDisplay("presenter", message, options);
   postToDisplay("stage", message, options);
@@ -1480,7 +1456,7 @@ async function loadEmbeddedVideo(id, options = {}) {
     els.embeddedVideoPlayer.currentTime = state.embeddedVideo.currentTime || 0;
     els.embeddedVideoPlayer.load();
     renderEmbeddedVideo();
-    if (state.activeView === "vlc" && state.videoStack === "embedded") syncEmbeddedVideoToDisplays();
+    if (!options.skipSync && state.activeView === "vlc" && state.videoStack === "embedded") syncEmbeddedVideoToDisplays();
   } catch (error) {
     if (!options.quiet) setVlcStatus(`Video load failed: ${error.message}`);
   }
@@ -1522,32 +1498,12 @@ function getEmbeddedVideoPayload() {
   };
 }
 
-async function getSelectedEmbeddedVideoFile() {
-  if (!window.videoStore) throw new Error("Video store is unavailable.");
-  if (!state.embeddedVideo.selectedId) return null;
-  return window.videoStore.getVideoFile(state.embeddedVideo.selectedId);
-}
-
 async function syncEmbeddedVideoToDisplay(display) {
   if (!state.embeddedVideo.selectedId) {
     postToDisplay(display, { type: "target:video-unload" });
     return;
   }
-  try {
-    const file = await getSelectedEmbeddedVideoFile();
-    if (!file) {
-      postToDisplay(display, { type: "target:video-unload" });
-      return;
-    }
-    postVideoLoadToDisplay(display, {
-      ...getEmbeddedVideoPayload(),
-      fileName: file.name,
-      fileType: file.type,
-      fileSize: file.size
-    }, file);
-  } catch (error) {
-    setVlcStatus(`Embedded video sync failed: ${error.message}`);
-  }
+  postToDisplay(display, getEmbeddedVideoPayload());
 }
 
 function syncEmbeddedVideoToDisplays() {
