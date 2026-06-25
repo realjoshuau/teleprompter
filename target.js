@@ -10,12 +10,11 @@ const progressFill = document.querySelector("#targetProgressFill");
 const progressPercent = document.querySelector("#targetProgressPercent");
 const videoPlayer = document.querySelector("#targetVideoPlayer");
 const videoStatus = document.querySelector("#targetVideoStatus");
+const fullscreenButton = document.querySelector("#targetFullscreenButton");
 
 let promptBlocks = [];
-let receiverConnection = null;
 let currentMode = "blank";
 let videoUrl = "";
-let pendingVideoData = null;
 
 function setMode(mode) {
   currentMode = mode;
@@ -127,7 +126,6 @@ function showPrompt(data) {
 }
 
 function unloadVideo() {
-  pendingVideoData = null;
   videoPlayer.pause();
   videoPlayer.removeAttribute("src");
   videoPlayer.load();
@@ -191,23 +189,39 @@ function blank() {
 
 function closePresentationWindow() {
   blank();
-
-  const connection = receiverConnection;
-  receiverConnection = null;
-
-  try {
-    connection?.close();
-  } catch {
-    // The controller may terminate the connection first.
-  }
-
+  notifyController("target:closed");
   window.close();
+}
+
+function notifyController(type) {
+  try {
+    window.opener?.postMessage({ type }, window.location.origin);
+  } catch {
+    // The controller may have closed first.
+  }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen();
+    }
+  } catch {
+    // Browsers require a direct button gesture; leave the window usable if fullscreen fails.
+  }
+}
+
+function renderFullscreenButton() {
+  fullscreenButton.textContent = document.fullscreenElement ? "Exit Full Screen" : "Full Screen";
+  document.body.classList.toggle("stage-fullscreen-active", Boolean(document.fullscreenElement));
 }
 
 function handleControllerMessage(message) {
   if (message instanceof Blob || message instanceof ArrayBuffer) {
-    const file = message instanceof Blob ? message : new Blob([message], { type: pendingVideoData?.fileType || "" });
-    loadVideo(pendingVideoData || {}, file);
+    const file = message instanceof Blob ? message : new Blob([message]);
+    loadVideo({}, file);
     return;
   }
 
@@ -255,39 +269,14 @@ function handleControllerMessage(message) {
   }
 }
 
-function parseConnectionMessage(data) {
-  if (typeof data !== "string") return data || {};
-  try {
-    return JSON.parse(data);
-  } catch {
-    return {};
-  }
-}
-
-function attachPresentationConnection(connection) {
-  receiverConnection = connection;
-  if ("binaryType" in connection) connection.binaryType = "blob";
-  connection.addEventListener("message", (event) => {
-    handleControllerMessage(parseConnectionMessage(event.data));
-  });
-  connection.addEventListener("close", closePresentationWindow);
-  connection.addEventListener("terminate", closePresentationWindow);
-}
-
-async function connectPresentationReceiver() {
-  if (!navigator.presentation?.receiver) return;
-
-  const connectionList = await navigator.presentation.receiver.connectionList;
-  connectionList.connections.forEach(attachPresentationConnection);
-  connectionList.addEventListener("connectionavailable", (event) => {
-    attachPresentationConnection(event.connection);
-  });
-}
-
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin) return;
   handleControllerMessage(event.data || {});
 });
+window.addEventListener("beforeunload", () => notifyController("target:closed"));
+document.addEventListener("fullscreenchange", renderFullscreenButton);
+fullscreenButton.addEventListener("click", toggleFullscreen);
 
 setMode("blank");
-connectPresentationReceiver().catch(() => setMode("blank"));
+renderFullscreenButton();
+notifyController("target:ready");

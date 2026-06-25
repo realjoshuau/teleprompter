@@ -646,24 +646,6 @@ h2 {
   min-height: auto;
 }
 
-.target-frame {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  height: 1px;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.target-frame:fullscreen {
-  width: 100vw;
-  height: 100vh;
-  opacity: 1;
-  background: #000;
-}
-
 .target-page {
   overflow: hidden;
   background: #000;

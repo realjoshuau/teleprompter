@@ -35,7 +35,6 @@ const els = {
   stageVideoTimerVisible: document.querySelector("#stageVideoTimerVisible"),
   tabs: Array.from(document.querySelectorAll(".tab")),
   panels: Array.from(document.querySelectorAll(".view-panel")),
-  targetFrame: document.querySelector("#targetFrame"),
   slideTitle: document.querySelector("#slideTitle"),
   slidePreview: document.querySelector("#slidePreview"),
   slideEmpty: document.querySelector("#slideEmpty"),
@@ -107,8 +106,7 @@ const state = {
   slideUrls: [],
   targetReady: false,
   presentationBlanked: false,
-  presentationRequest: null,
-  presentationConnection: null,
+  presentationWindow: null,
   stageReady: false,
   stageBlanked: false,
   stageWindow: null,
@@ -227,10 +225,6 @@ function supportsFileSystemAccess() {
   return "showDirectoryPicker" in window;
 }
 
-function supportsPresentationRequest() {
-  return "PresentationRequest" in window && "presentation" in navigator;
-}
-
 function isTruthyOverrideValue(value) {
   return value === "1" || value?.toLowerCase() === "true";
 }
@@ -269,7 +263,7 @@ function shouldRedirectToUnsupported() {
 
   return !hasUnsupportedOverride()
     && !isChromiumishBrowser()
-    && (!supportsFileSystemAccess() || !supportsPresentationRequest());
+    && !supportsFileSystemAccess();
 }
 
 function redirectToUnsupported() {
@@ -348,6 +342,7 @@ function getDisplay(display) {
       windowKey: "stageWindow",
       url: "stage.html",
       label: "Stage",
+      windowName: "teleprompter-stage",
       setStatus: setStageStatus,
       renderButtons: renderStageButtons,
       renderBlank: renderStageBlankButton
@@ -355,10 +350,10 @@ function getDisplay(display) {
     : {
       readyKey: "targetReady",
       blankedKey: "presentationBlanked",
-      requestKey: "presentationRequest",
-      connectionKey: "presentationConnection",
+      windowKey: "presentationWindow",
       url: "target.html",
       label: "Presentation",
+      windowName: "teleprompter-presenter",
       setStatus: setScreenStatus,
       renderButtons: renderPresentationButtons,
       renderBlank: renderBlankButton
@@ -369,22 +364,9 @@ function postToDisplay(display, message, options = {}) {
   const target = getDisplay(display);
   if (!state[target.readyKey] && !options.force) return;
 
-  if (display === "stage") {
-    const stageWindow = state[target.windowKey];
-    if (stageWindow && !stageWindow.closed) {
-      stageWindow.postMessage(message, window.location.origin);
-    }
-    return;
-  }
-
-  const connection = state[target.connectionKey];
-  if (connection && connection.state === "connected") {
-    connection.send(JSON.stringify(message));
-    return;
-  }
-
-  if (display === "presenter" && els.targetFrame.contentWindow) {
-    els.targetFrame.contentWindow.postMessage(message, window.location.origin);
+  const displayWindow = state[target.windowKey];
+  if (displayWindow && !displayWindow.closed) {
+    displayWindow.postMessage(message, window.location.origin);
   }
 }
 
@@ -423,13 +405,12 @@ function setStageBlanked(blanked) {
 }
 
 function closeDisplayWindow(display) {
+  const target = getDisplay(display);
   postToDisplay(display, { type: "target:close" }, { force: true });
-  if (display === "stage") {
-    try {
-      state.stageWindow?.close();
-    } catch {
-      // Popup may already be gone.
-    }
+  try {
+    state[target.windowKey]?.close();
+  } catch {
+    // Popup may already be gone.
   }
 }
 
@@ -622,100 +603,43 @@ function htmlToText(html) {
 }
 
 async function launchTarget() {
-  return launchDisplay("presenter");
+  return launchPopupDisplay("presenter");
 }
 
 async function launchStage() {
-  const target = getDisplay("stage");
+  return launchPopupDisplay("stage");
+}
+
+async function launchPopupDisplay(display) {
+  const target = getDisplay(display);
 
   try {
-    if (state.stageWindow && !state.stageWindow.closed) {
-      state.stageWindow.focus();
-      if (state.stageReady) syncActiveViewToDisplay("stage");
+    const existingWindow = state[target.windowKey];
+    if (existingWindow && !existingWindow.closed) {
+      existingWindow.focus();
+      if (state[target.readyKey]) syncActiveViewToDisplay(display);
       return;
     }
 
-    state.stageReady = false;
+    state[target.readyKey] = false;
     target.renderButtons();
-    target.setStatus("Opening stage popup...");
+    target.setStatus(`Opening ${target.label.toLowerCase()} popup...`);
 
     const targetUrl = new URL(target.url, window.location.href);
-    const popup = window.open(targetUrl.href, "teleprompter-stage", "popup=yes,width=1280,height=720");
+    const popup = window.open(targetUrl.href, target.windowName, "popup=yes,width=1280,height=720");
     if (!popup) throw new Error("Popup was blocked. Allow popups for this site and try again.");
 
-    state.stageWindow = popup;
-    state.stageBlanked = false;
+    state[target.windowKey] = popup;
+    state[target.blankedKey] = false;
     target.renderBlank();
-    target.setStatus("Stage popup opened. Use Full Screen in the Stage window.");
+    target.setStatus(`${target.label} popup opened. Use Full Screen in the ${target.label} window.`);
     popup.focus();
   } catch (error) {
-    state.stageReady = false;
-    state.stageWindow = null;
-    target.renderButtons();
-    target.setStatus(`Stage launch failed: ${error.message}`);
-  }
-}
-
-async function launchDisplay(display) {
-  const target = getDisplay(display);
-  state[target.readyKey] = false;
-  target.renderButtons();
-  target.setStatus(`Launching ${target.label.toLowerCase()} display...`);
-
-  try {
-    if (!supportsPresentationRequest()) {
-      throw new Error("Presentation Request API is unavailable in this browser.");
-    }
-
-    const targetUrl = new URL(target.url, window.location.href);
-    state[target.requestKey] = new PresentationRequest([targetUrl.href]);
-    if (display === "presenter") navigator.presentation.defaultRequest = state[target.requestKey];
-    const connection = await state[target.requestKey].start();
-    attachDisplayConnection(display, connection);
-    state[target.readyKey] = true;
-    state[target.blankedKey] = false;
-    target.renderButtons();
-    target.renderBlank();
-    target.setStatus(`${target.label} display connected.`);
-    syncTimerToDisplays();
-    syncActiveViewToDisplay(display);
-  } catch (error) {
     state[target.readyKey] = false;
+    state[target.windowKey] = null;
     target.renderButtons();
     target.setStatus(`${target.label} launch failed: ${error.message}`);
   }
-}
-
-function attachPresentationConnection(connection) {
-  attachDisplayConnection("presenter", connection);
-}
-
-function attachDisplayConnection(display, connection) {
-  const target = getDisplay(display);
-  state[target.connectionKey] = connection;
-  if ("binaryType" in connection) connection.binaryType = "blob";
-
-  connection.addEventListener("connect", () => {
-    state[target.readyKey] = true;
-    state[target.blankedKey] = false;
-    target.renderButtons();
-    target.renderBlank();
-    target.setStatus(`${target.label} display connected.`);
-    syncTimerToDisplays();
-    syncActiveViewToDisplay(display);
-  });
-
-  connection.addEventListener("close", () => {
-    state[target.readyKey] = false;
-    target.renderButtons();
-    target.setStatus(`${target.label} display closed.`);
-  });
-
-  connection.addEventListener("terminate", () => {
-    state[target.readyKey] = false;
-    target.renderButtons();
-    target.setStatus(`${target.label} display terminated.`);
-  });
 }
 
 async function setActiveView(view, options = {}) {
@@ -751,78 +675,63 @@ async function closeStageDisplay() {
 function closeDisplay(display) {
   const target = getDisplay(display);
   closeDisplayWindow(display);
-  terminateDisplayConnection(display);
 
   state[target.readyKey] = false;
   state[target.blankedKey] = false;
-  if (display === "stage") {
-    state.stageWindow = null;
-  } else {
-    state[target.connectionKey] = null;
-    state[target.requestKey] = null;
-    els.targetFrame.removeAttribute("src");
-  }
+  state[target.windowKey] = null;
   target.renderButtons();
   target.renderBlank();
   target.setStatus(`${target.label} display closed.`);
 }
 
-function terminatePresentationConnection() {
-  terminateDisplayConnection("presenter");
-}
-
-function terminateDisplayConnection(display) {
-  const target = getDisplay(display);
-  if (!target.connectionKey) return;
-  try {
-    const connection = state[target.connectionKey];
-    if (connection && connection.state !== "terminated") {
-      connection.terminate();
-    }
-  } catch {
-    // Some receivers close themselves before the controller can terminate the connection.
-  }
-}
-
 function closePresentationDisplayBeforeUnload() {
   closeDisplayWindow("presenter");
   closeDisplayWindow("stage");
-  terminateDisplayConnection("presenter");
 }
 
-function markStageReady(source) {
-  if (source && state.stageWindow && source !== state.stageWindow) return;
-  const target = getDisplay("stage");
-  state.stageReady = true;
-  state.stageBlanked = false;
+function markDisplayReady(display, source) {
+  const target = getDisplay(display);
+  if (source && state[target.windowKey] && source !== state[target.windowKey]) return;
+  state[target.readyKey] = true;
+  state[target.blankedKey] = false;
   target.renderButtons();
   target.renderBlank();
-  target.setStatus("Stage popup connected.");
+  target.setStatus(`${target.label} popup connected.`);
   syncTimerToDisplays();
-  syncActiveViewToDisplay("stage");
+  syncActiveViewToDisplay(display);
 }
 
-function markStageClosed(source) {
-  if (source && state.stageWindow && source !== state.stageWindow) return;
-  const target = getDisplay("stage");
-  state.stageReady = false;
-  state.stageBlanked = false;
-  state.stageWindow = null;
+function markDisplayClosed(display, source) {
+  const target = getDisplay(display);
+  if (source && state[target.windowKey] && source !== state[target.windowKey]) return;
+  state[target.readyKey] = false;
+  state[target.blankedKey] = false;
+  state[target.windowKey] = null;
   target.renderButtons();
   target.renderBlank();
-  target.setStatus("Stage popup closed.");
+  target.setStatus(`${target.label} popup closed.`);
 }
 
 function handleWindowMessage(event) {
   if (event.origin !== window.location.origin) return;
   const message = event.data || {};
+  if (message.type === "target:ready") {
+    markDisplayReady("presenter", event.source);
+    return;
+  }
+
+  if (message.type === "target:closed") {
+    markDisplayClosed("presenter", event.source);
+    return;
+  }
+
   if (message.type === "stage:ready") {
-    markStageReady(event.source);
+    markDisplayReady("stage", event.source);
     return;
   }
 
   if (message.type === "stage:closed") {
-    markStageClosed(event.source);
+    markDisplayClosed("stage", event.source);
   }
 }
 
@@ -1870,10 +1779,6 @@ function init() {
 
   if (!supportsFileSystemAccess()) {
     setProjectStatus("File System Access API requires Chromium on localhost or HTTPS.");
-  }
-
-  if (!supportsPresentationRequest()) {
-    setScreenStatus("Presentation Request API unavailable. Use Chromium with presentation display support.");
   }
 
   vlcPollTimer = window.setInterval(pollVlc, 5000);

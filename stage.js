@@ -33,7 +33,6 @@ const timerBlocks = {
   video: document.querySelector("#stageVideoTimerBlock")
 };
 
-let receiverConnection = null;
 let currentMode = "blank";
 let videoUrl = "";
 let timerState = {
@@ -49,8 +48,6 @@ let timerState = {
   },
   sentAt: Date.now()
 };
-let pendingVideoData = null;
-
 function setMode(mode) {
   currentMode = mode;
   stageRoot.className = `stage-view ${mode}`;
@@ -226,7 +223,6 @@ function showPrompt(data = {}) {
 }
 
 function unloadVideo() {
-  pendingVideoData = null;
   videoPlayer.pause();
   videoPlayer.removeAttribute("src");
   videoPlayer.load();
@@ -298,15 +294,6 @@ function blank() {
 function closeStageWindow() {
   notifyController("stage:closed");
   blank();
-  const connection = receiverConnection;
-  receiverConnection = null;
-
-  try {
-    connection?.close();
-  } catch {
-    // The controller may already be terminating the connection.
-  }
-
   window.close();
 }
 
@@ -337,8 +324,8 @@ function renderFullscreenButton() {
 
 function handleControllerMessage(message) {
   if (message instanceof Blob || message instanceof ArrayBuffer) {
-    const file = message instanceof Blob ? message : new Blob([message], { type: pendingVideoData?.fileType || "" });
-    loadVideo(pendingVideoData || {}, file);
+    const file = message instanceof Blob ? message : new Blob([message]);
+    loadVideo({}, file);
     return;
   }
 
@@ -392,35 +379,6 @@ function handleControllerMessage(message) {
   }
 }
 
-function parseConnectionMessage(data) {
-  if (typeof data !== "string") return data || {};
-  try {
-    return JSON.parse(data);
-  } catch {
-    return {};
-  }
-}
-
-function attachPresentationConnection(connection) {
-  receiverConnection = connection;
-  if ("binaryType" in connection) connection.binaryType = "blob";
-  connection.addEventListener("message", (event) => {
-    handleControllerMessage(parseConnectionMessage(event.data));
-  });
-  connection.addEventListener("close", closeStageWindow);
-  connection.addEventListener("terminate", closeStageWindow);
-}
-
-async function connectPresentationReceiver() {
-  if (!navigator.presentation?.receiver) return;
-
-  const connectionList = await navigator.presentation.receiver.connectionList;
-  connectionList.connections.forEach(attachPresentationConnection);
-  connectionList.addEventListener("connectionavailable", (event) => {
-    attachPresentationConnection(event.connection);
-  });
-}
-
 window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin) return;
   handleControllerMessage(event.data || {});
@@ -437,4 +395,3 @@ setMode("blank");
 updateClockAndTimer();
 renderFullscreenButton();
 notifyController("stage:ready");
-connectPresentationReceiver().catch(() => setMode("blank"));
