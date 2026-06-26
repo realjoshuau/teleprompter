@@ -15,6 +15,7 @@ const fullscreenButton = document.querySelector("#targetFullscreenButton");
 let promptBlocks = [];
 let currentMode = "blank";
 let videoUrl = "";
+let currentVideoId = "";
 
 function setMode(mode) {
   currentMode = mode;
@@ -131,6 +132,7 @@ function unloadVideo() {
   videoPlayer.load();
   if (videoUrl) URL.revokeObjectURL(videoUrl);
   videoUrl = "";
+  currentVideoId = "";
   videoStatus.hidden = false;
   videoStatus.textContent = "No embedded video loaded.";
 }
@@ -156,6 +158,7 @@ async function loadVideo(data = {}, file = data.file) {
     } else {
       throw new Error("Video id was not received from the controller.");
     }
+    currentVideoId = data.id || "";
     videoPlayer.currentTime = Number.isFinite(data.currentTime) ? data.currentTime : 0;
     videoPlayer.muted = true;
     videoStatus.hidden = true;
@@ -193,9 +196,9 @@ function closePresentationWindow() {
   window.close();
 }
 
-function notifyController(type) {
+function notifyController(type, detail = {}) {
   try {
-    window.opener?.postMessage({ type }, window.location.origin);
+    window.opener?.postMessage({ type, ...detail }, window.location.origin);
   } catch {
     // The controller may have closed first.
   }
@@ -276,6 +279,7 @@ window.addEventListener("message", (event) => {
 window.addEventListener("beforeunload", () => notifyController("target:closed"));
 document.addEventListener("fullscreenchange", renderFullscreenButton);
 fullscreenButton.addEventListener("click", toggleFullscreen);
+videoPlayer.addEventListener("ended", () => notifyController("target:video-ended", { id: currentVideoId }));
 
 setMode("blank");
 renderFullscreenButton();

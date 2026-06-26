@@ -154,6 +154,7 @@ let lastPromptTick = 0;
 let vlcPollTimer = 0;
 let timerRenderTimer = 0;
 let videoSyncTimer = 0;
+let embeddedVideoAdvancing = false;
 
 function loadPreferences() {
   try {
@@ -732,6 +733,11 @@ function handleWindowMessage(event) {
 
   if (message.type === "stage:closed") {
     markDisplayClosed("stage", event.source);
+    return;
+  }
+
+  if (message.type === "target:video-ended" || message.type === "stage:video-ended") {
+    advanceEmbeddedVideoQueue(message.id);
   }
 }
 
@@ -1354,6 +1360,15 @@ async function selectEmbeddedVideo(id) {
   await loadEmbeddedVideo(id);
 }
 
+function getNextEmbeddedVideoId() {
+  const video = state.embeddedVideo;
+  if (!video.files.length) return "";
+
+  const currentIndex = video.files.findIndex((item) => item.id === video.selectedId);
+  const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % video.files.length : 0;
+  return video.files[nextIndex]?.id || "";
+}
+
 async function loadEmbeddedVideo(id, options = {}) {
   if (!id) return;
   try {
@@ -1368,6 +1383,37 @@ async function loadEmbeddedVideo(id, options = {}) {
     if (!options.skipSync && state.activeView === "vlc" && state.videoStack === "embedded") syncEmbeddedVideoToDisplays();
   } catch (error) {
     if (!options.quiet) setVlcStatus(`Video load failed: ${error.message}`);
+  }
+}
+
+async function advanceEmbeddedVideoQueue(endedId = state.embeddedVideo.selectedId) {
+  if (embeddedVideoAdvancing) return;
+  if (state.videoStack !== "embedded") return;
+  if (state.activeView !== "vlc") return;
+  if (!state.embeddedVideo.selectedId || !state.embeddedVideo.files.length) return;
+  if (endedId && endedId !== state.embeddedVideo.selectedId) return;
+
+  const nextId = getNextEmbeddedVideoId();
+  if (!nextId) return;
+
+  embeddedVideoAdvancing = true;
+  try {
+    const selected = state.embeddedVideo.files.find((item) => item.id === nextId);
+    state.embeddedVideo.selectedId = nextId;
+    state.embeddedVideo.selectedName = selected?.name || "";
+    state.embeddedVideo.currentTime = 0;
+    state.embeddedVideo.duration = 0;
+    state.embeddedVideo.playing = true;
+
+    renderVideoStack();
+    renderEmbeddedVideo();
+    savePreferences();
+    await loadEmbeddedVideo(nextId);
+    await els.embeddedVideoPlayer.play().catch((error) => setVlcStatus(`Embedded autoplay failed: ${error.message}`));
+  } finally {
+    embeddedVideoAdvancing = false;
+    renderVideoStack();
+    renderEmbeddedVideo();
   }
 }
 
@@ -1408,6 +1454,12 @@ function getEmbeddedVideoPayload() {
 }
 
 async function syncEmbeddedVideoToDisplay(display) {
+  const target = getDisplay(display);
+  if (state[target.blankedKey]) {
+    blankDisplay(display);
+    return;
+  }
+
   if (!state.embeddedVideo.selectedId) {
     postToDisplay(display, { type: "target:video-unload" });
     return;
@@ -1754,9 +1806,13 @@ function bindEvents() {
     sendEmbeddedVideoControl("play", { currentTime: els.embeddedVideoPlayer.currentTime });
   });
   els.embeddedVideoPlayer.addEventListener("pause", () => {
+    if (embeddedVideoAdvancing) return;
     state.embeddedVideo.playing = false;
     renderEmbeddedVideo();
     sendEmbeddedVideoControl("pause", { currentTime: els.embeddedVideoPlayer.currentTime });
+  });
+  els.embeddedVideoPlayer.addEventListener("ended", () => {
+    advanceEmbeddedVideoQueue(state.embeddedVideo.selectedId);
   });
   els.vlcDocked.addEventListener("change", () => {
     state.vlc.docked = els.vlcDocked.checked;

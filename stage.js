@@ -35,6 +35,7 @@ const timerBlocks = {
 
 let currentMode = "blank";
 let videoUrl = "";
+let currentVideoId = "";
 let timerState = {
   mode: "stopwatch",
   running: false,
@@ -228,6 +229,7 @@ function unloadVideo() {
   videoPlayer.load();
   if (videoUrl) URL.revokeObjectURL(videoUrl);
   videoUrl = "";
+  currentVideoId = "";
   videoStatus.hidden = false;
   videoStatus.textContent = "No embedded video loaded.";
   updateVideoRemaining();
@@ -254,6 +256,7 @@ async function loadVideo(data = {}, file = data.file) {
     } else {
       throw new Error("Video id was not received from the controller.");
     }
+    currentVideoId = data.id || "";
     videoPlayer.currentTime = Number.isFinite(data.currentTime) ? data.currentTime : 0;
     videoPlayer.muted = true;
     videoStatus.hidden = true;
@@ -297,9 +300,9 @@ function closeStageWindow() {
   window.close();
 }
 
-function notifyController(type) {
+function notifyController(type, detail = {}) {
   try {
-    window.opener?.postMessage({ type }, window.location.origin);
+    window.opener?.postMessage({ type, ...detail }, window.location.origin);
   } catch {
     // The controller may have closed first.
   }
@@ -389,6 +392,7 @@ fullscreenButton.addEventListener("click", toggleFullscreen);
 
 videoPlayer.addEventListener("timeupdate", updateVideoRemaining);
 videoPlayer.addEventListener("durationchange", updateVideoRemaining);
+videoPlayer.addEventListener("ended", () => notifyController("stage:video-ended", { id: currentVideoId }));
 window.setInterval(updateClockAndTimer, 1000);
 
 setMode("blank");
