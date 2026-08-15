@@ -20,6 +20,9 @@
             <button id="launchButton" class="secondary" type="button" aria-pressed="false">Launch Presentation</button>
             <button id="blankPresentationButton" class="secondary" type="button" aria-pressed="false">Blank Presentation</button>
             <button id="closePresentationButton" class="secondary" type="button" aria-pressed="true">Close Presentation</button>
+            <button id="launchStageButton" class="secondary" type="button" aria-pressed="false">Launch Stage</button>
+            <button id="blankStageButton" class="secondary" type="button" aria-pressed="false">Blank Stage</button>
+            <button id="closeStageButton" class="secondary" type="button" aria-pressed="true">Close Stage</button>
           </div>
           <div class="about-menu">
             <button
@@ -48,7 +51,55 @@
       <section class="status-strip" aria-live="polite">
         <span id="projectStatus">No project loaded.</span>
         <span id="screenStatus">Presentation screen is idle.</span>
+        <span id="stageStatus">Stage view is idle.</span>
         <span id="vlcStatus">VLC is not connected.</span>
+      </section>
+
+      <section class="timer-strip" aria-label="Display timer controls">
+        <label>
+          Timer
+          <select id="timerMode">
+            <option value="stopwatch">Stopwatch</option>
+            <option value="countdown">Countdown</option>
+          </select>
+        </label>
+        <label>
+          Duration
+          <input id="timerDuration" type="time" step="1" value="00:05:00">
+        </label>
+        <strong id="timerDisplay">00:00</strong>
+        <div class="inline-actions">
+          <button id="timerStartButton" class="secondary" type="button" aria-pressed="false">Start</button>
+          <button id="timerPauseButton" class="secondary" type="button" aria-pressed="true">Pause</button>
+          <button id="timerResetButton" class="secondary" type="button">Reset</button>
+        </div>
+        <label class="stage-layout-field" for="stagePresentationLayout">
+          Stage presentation
+          <select id="stagePresentationLayout">
+            <option value="slide-focus">Slide focus</option>
+            <option value="script-focus">Script focus</option>
+          </select>
+        </label>
+        <label class="stage-script-zoom-field" for="stageScriptZoom">
+          Script zoom
+          <span id="stageScriptZoomValue">100%</span>
+          <input id="stageScriptZoom" type="range" min="55" max="130" step="5">
+        </label>
+        <div class="stage-timer-toggles" aria-label="Stage timer visibility">
+          <span>Stage timer</span>
+          <label class="toggle-row">
+            <input id="stageSlideTimerVisible" type="checkbox">
+            <span>Slides</span>
+          </label>
+          <label class="toggle-row">
+            <input id="stagePromptTimerVisible" type="checkbox">
+            <span>Prompt</span>
+          </label>
+          <label class="toggle-row">
+            <input id="stageVideoTimerVisible" type="checkbox">
+            <span>Video</span>
+          </label>
+        </div>
       </section>
 
       <nav class="tabs" aria-label="Controller views">
@@ -151,10 +202,21 @@
           <section class="tool-panel">
             <div class="section-heading">
               <div>
-                <p class="eyebrow">VLC Remote</p>
+                <p class="eyebrow">Video Stack</p>
                 <h2 id="vlcNowPlaying">Not playing</h2>
               </div>
               <button id="refreshVlcButton" class="secondary" type="button">Refresh</button>
+            </div>
+
+            <div class="stack-switcher" role="group" aria-label="Video stack">
+              <label class="toggle-row">
+                <input id="videoStackVlc" type="radio" name="videoStack" value="vlc" checked>
+                <span>VLC</span>
+              </label>
+              <label class="toggle-row">
+                <input id="videoStackEmbedded" type="radio" name="videoStack" value="embedded">
+                <span>Embedded Video</span>
+              </label>
             </div>
 
             <div class="config-grid">
@@ -186,6 +248,28 @@
               <button id="vlcStopButton" class="danger" type="button">Stop</button>
             </div>
 
+            <div id="embeddedVideoPanel" class="embedded-video-panel" hidden>
+              <div class="section-heading compact-heading">
+                <div>
+                  <p class="eyebrow">Embedded</p>
+                  <h2 id="embeddedVideoTitle">No video selected</h2>
+                </div>
+                <button id="chooseVideoFolderButton" class="secondary" type="button">Choose Folder</button>
+              </div>
+              <video id="embeddedVideoPlayer" class="embedded-video-player" playsinline></video>
+              <div class="video-scrubber">
+                <span id="embeddedVideoElapsed">0:00</span>
+                <input id="embeddedVideoSeek" type="range" min="0" max="0" step="0.1" value="0">
+                <span id="embeddedVideoDuration">--:--</span>
+              </div>
+              <div class="remote-pad" aria-label="Embedded video controls">
+                <button id="embeddedBackButton" class="secondary" type="button">Back 10s</button>
+                <button id="embeddedPlayPauseButton" type="button">Play/Pause</button>
+                <button id="embeddedForwardButton" class="secondary" type="button">Forward 10s</button>
+                <button id="embeddedStopButton" class="danger" type="button">Stop</button>
+              </div>
+            </div>
+
             <details class="advanced">
               <summary>Advanced</summary>
               <label class="toggle-row">
@@ -203,20 +287,14 @@
               </div>
             </div>
             <div id="playlistList" class="playlist-list"></div>
+            <div id="embeddedVideoList" class="playlist-list" hidden></div>
           </aside>
         </div>
       </section>
-
-      <iframe
-        id="targetFrame"
-        class="target-frame"
-        title="Presentation screen"
-        allow="fullscreen; presentation"
-        allowfullscreen
-      ></iframe>
     </main>
 
     <script src="marked.umd.js" defer></script>
+    <script src="video-store.js" defer></script>
     <script src="main.js" defer></script>
   </body>
 </html>

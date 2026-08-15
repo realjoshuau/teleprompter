@@ -1,25 +1,57 @@
-const stage = document.querySelector("#targetStage");
-const blankView = document.querySelector("#targetBlank");
-const slideView = document.querySelector("#targetSlide");
-const promptView = document.querySelector("#targetPrompt");
-const videoView = document.querySelector("#targetVideo");
-const slideImage = document.querySelector("#targetSlideImage");
-const promptScroll = document.querySelector("#targetPromptScroll");
-const progressOverlay = document.querySelector("#targetProgress");
-const progressFill = document.querySelector("#targetProgressFill");
-const progressPercent = document.querySelector("#targetProgressPercent");
-const videoPlayer = document.querySelector("#targetVideoPlayer");
-const videoStatus = document.querySelector("#targetVideoStatus");
-const fullscreenButton = document.querySelector("#targetFullscreenButton");
+const stageRoot = document.querySelector("#stageRoot");
+const blankView = document.querySelector("#stageBlank");
+const slideView = document.querySelector("#stageSlide");
+const promptView = document.querySelector("#stagePrompt");
+const videoView = document.querySelector("#stageVideo");
+const slideImage = document.querySelector("#stageSlideImage");
+const nextImage = document.querySelector("#stageNextImage");
+const nextLabel = document.querySelector("#stageNextLabel");
+const slideCount = document.querySelector("#stageSlideCount");
+const slideNote = document.querySelector("#stageSlideNote");
+const notesLabel = document.querySelector("#stageNotesLabel");
+const promptScroll = document.querySelector("#stagePromptScroll");
+const progressOverlay = document.querySelector("#stageProgress");
+const progressFill = document.querySelector("#stageProgressFill");
+const progressPercent = document.querySelector("#stageProgressPercent");
+const videoPlayer = document.querySelector("#stageVideoPlayer");
+const videoStatus = document.querySelector("#stageVideoStatus");
+const videoRemaining = document.querySelector("#stageVideoRemaining");
+const fullscreenButton = document.querySelector("#stageFullscreenButton");
+const clockEls = [
+  document.querySelector("#stageClock"),
+  document.querySelector("#stagePromptClock"),
+  document.querySelector("#stageVideoClock")
+];
+const timerEls = [
+  document.querySelector("#stageTimer"),
+  document.querySelector("#stagePromptTimer"),
+  document.querySelector("#stageVideoTimer")
+];
+const timerBlocks = {
+  slide: document.querySelector("#stageTimerBlock"),
+  prompt: document.querySelector("#stagePromptTimerBlock"),
+  video: document.querySelector("#stageVideoTimerBlock")
+};
 
-let promptBlocks = [];
 let currentMode = "blank";
 let videoUrl = "";
 let currentVideoId = "";
-
+let timerState = {
+  mode: "stopwatch",
+  running: false,
+  elapsedMs: 0,
+  durationMs: 300000,
+  startedAt: 0,
+  stageTimers: {
+    slide: true,
+    prompt: true,
+    video: true
+  },
+  sentAt: Date.now()
+};
 function setMode(mode) {
   currentMode = mode;
-  stage.className = `target-stage ${mode}`;
+  stageRoot.className = `stage-view ${mode}`;
   blankView.hidden = mode !== "blank";
   slideView.hidden = mode !== "slide";
   promptView.hidden = mode !== "teleprompter";
@@ -29,18 +61,65 @@ function setMode(mode) {
   }
 }
 
-function renderPromptBlocks(blocks, activeIndex = 0) {
-  promptBlocks = Array.isArray(blocks) ? blocks : [];
-  promptScroll.textContent = "";
+function formatClock(date = new Date()) {
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return "--:--";
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(remainingSeconds).padStart(2, "0")}`;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
+}
+
+function getTimerElapsedMs() {
+  const base = Number.isFinite(timerState.elapsedMs) ? timerState.elapsedMs : 0;
+  if (!timerState.running || !Number.isFinite(timerState.startedAt)) return base;
+  return base + Math.max(0, Date.now() - timerState.startedAt);
+}
+
+function getTimerDisplaySeconds() {
+  const elapsed = getTimerElapsedMs();
+  if (timerState.mode === "countdown") {
+    const duration = Number.isFinite(timerState.durationMs) ? timerState.durationMs : 0;
+    return Math.max(0, (duration - elapsed) / 1000);
+  }
+  return elapsed / 1000;
+}
+
+function updateClockAndTimer() {
+  const clock = formatClock();
+  const timer = formatDuration(getTimerDisplaySeconds());
+  clockEls.forEach((element) => {
+    element.textContent = clock;
+  });
+  timerEls.forEach((element) => {
+    element.textContent = timer;
+  });
+  updateTimerVisibility();
+  updateVideoRemaining();
+}
+
+function updateTimerVisibility() {
+  const visibility = timerState.stageTimers || {};
+  timerBlocks.slide.hidden = visibility.slide === false;
+  timerBlocks.prompt.hidden = visibility.prompt === false;
+  timerBlocks.video.hidden = visibility.video === false;
+}
+
+function renderPromptBlocks(blocks, activeIndex = 0) {
+  promptScroll.textContent = "";
   const content = document.createElement("div");
   content.className = "target-prompt-content";
 
-  promptBlocks.forEach((block, index) => {
+  (Array.isArray(blocks) ? blocks : []).forEach((block, index) => {
     const item = document.createElement("section");
     item.className = "target-prompt-block";
     item.innerHTML = block.html || "";
-    if (index === activeIndex) item.classList.add("active");
+    item.classList.toggle("active", index === activeIndex);
     content.append(item);
   });
 
@@ -65,10 +144,7 @@ function resolvePromptScrollTop(data = {}) {
   const blocks = Array.from(promptScroll.querySelectorAll(".target-prompt-block"));
   const anchorIndex = Math.max(0, Math.min(blocks.length - 1, data.anchorIndex));
   const anchorBlock = blocks[anchorIndex];
-
-  if (!anchorBlock) {
-    return Number.isFinite(data.scrollTop) ? data.scrollTop : 0;
-  }
+  if (!anchorBlock) return Number.isFinite(data.scrollTop) ? data.scrollTop : 0;
 
   const scrollRect = promptScroll.getBoundingClientRect();
   const blockRect = anchorBlock.getBoundingClientRect();
@@ -77,7 +153,6 @@ function resolvePromptScrollTop(data = {}) {
   const progress = Math.max(0, Math.min(1, data.anchorProgress));
   const marker = scrollRect.top + promptScroll.clientHeight * 0.36;
   const targetAnchor = blockRect.top + (nextTop - blockRect.top) * progress;
-
   return promptScroll.scrollTop + targetAnchor - marker;
 }
 
@@ -113,13 +188,35 @@ function updateProgressOverlay(data = {}) {
   progressPercent.textContent = data.progressPercentEnabled ? `${percent}%` : "";
 }
 
-function showSlide(src, alt) {
-  slideImage.src = src || "";
-  slideImage.alt = alt || "Current slide";
+function showSlide(data = {}) {
+  const layout = data.stagePresentationLayout === "script-focus" ? "script-focus" : "slide-focus";
+  const scriptZoom = Number.isFinite(data.stageScriptZoom) ? Math.max(55, Math.min(130, data.stageScriptZoom)) : 100;
+  slideView.classList.toggle("script-focus", layout === "script-focus");
+  slideView.classList.toggle("slide-focus", layout !== "script-focus");
+  slideView.style.setProperty("--stage-script-zoom", String(scriptZoom / 100));
+  notesLabel.textContent = layout === "script-focus" ? "Script" : "Notes";
+  slideImage.src = data.src || "";
+  slideImage.alt = data.alt || "Current slide";
+  slideCount.textContent = Number.isFinite(data.currentIndex) && Number.isFinite(data.totalSlides)
+    ? `Slide ${data.currentIndex + 1} of ${data.totalSlides}`
+    : "Slide";
+  slideNote.textContent = data.note || "No notes.";
+
+  if (data.nextSrc) {
+    nextImage.hidden = false;
+    nextImage.src = data.nextSrc;
+    nextImage.alt = data.nextAlt || "Next slide";
+    nextLabel.textContent = data.nextNote || "Next slide";
+  } else {
+    nextImage.hidden = true;
+    nextImage.removeAttribute("src");
+    nextLabel.textContent = "No next slide";
+  }
+
   setMode("slide");
 }
 
-function showPrompt(data) {
+function showPrompt(data = {}) {
   applyPromptSizing(data);
   renderPromptBlocks(data.blocks, data.activeIndex);
   setMode("teleprompter");
@@ -135,6 +232,7 @@ function unloadVideo() {
   currentVideoId = "";
   videoStatus.hidden = false;
   videoStatus.textContent = "No embedded video loaded.";
+  updateVideoRemaining();
 }
 
 async function loadVideo(data = {}, file = data.file) {
@@ -182,6 +280,12 @@ function controlVideo(data = {}) {
   } else if (data.action === "skip" && Number.isFinite(data.delta)) {
     videoPlayer.currentTime = Math.max(0, videoPlayer.currentTime + data.delta);
   }
+  updateVideoRemaining();
+}
+
+function updateVideoRemaining() {
+  const remaining = videoPlayer.duration - videoPlayer.currentTime;
+  videoRemaining.textContent = formatDuration(remaining);
 }
 
 function blank() {
@@ -190,9 +294,9 @@ function blank() {
   setMode("blank");
 }
 
-function closePresentationWindow() {
+function closeStageWindow() {
+  notifyController("stage:closed");
   blank();
-  notifyController("target:closed");
   window.close();
 }
 
@@ -234,12 +338,18 @@ function handleControllerMessage(message) {
   }
 
   if (message.type === "target:close") {
-    closePresentationWindow();
+    closeStageWindow();
+    return;
+  }
+
+  if (message.type === "target:timer-state") {
+    timerState = { ...timerState, ...message };
+    updateClockAndTimer();
     return;
   }
 
   if (message.type === "target:slide") {
-    showSlide(message.src, message.alt);
+    showSlide(message);
     return;
   }
 
@@ -276,11 +386,16 @@ window.addEventListener("message", (event) => {
   if (event.origin !== window.location.origin) return;
   handleControllerMessage(event.data || {});
 });
-window.addEventListener("beforeunload", () => notifyController("target:closed"));
+window.addEventListener("beforeunload", () => notifyController("stage:closed"));
 document.addEventListener("fullscreenchange", renderFullscreenButton);
 fullscreenButton.addEventListener("click", toggleFullscreen);
-videoPlayer.addEventListener("ended", () => notifyController("target:video-ended", { id: currentVideoId }));
+
+videoPlayer.addEventListener("timeupdate", updateVideoRemaining);
+videoPlayer.addEventListener("durationchange", updateVideoRemaining);
+videoPlayer.addEventListener("ended", () => notifyController("stage:video-ended", { id: currentVideoId }));
+window.setInterval(updateClockAndTimer, 1000);
 
 setMode("blank");
+updateClockAndTimer();
 renderFullscreenButton();
-notifyController("target:ready");
+notifyController("stage:ready");
